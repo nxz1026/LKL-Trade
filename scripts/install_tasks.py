@@ -101,9 +101,14 @@ def install() -> int:
 
 
 def uninstall() -> int:
-    names = ",".join(list(_TASKS) + list(_LEGACY))
-    _ps(f"Unregister-ScheduledTask -TaskName {names} -Confirm:$false -ErrorAction SilentlyContinue")
-    print("已卸载")
+    """幂等卸载：只删现存任务；一个都没有也算成功（不再对不存在任务抛错）。"""
+    names = ", ".join(f"'{n}'" for n in list(_TASKS) + list(_LEGACY))
+    out = _ps(
+        "$ErrorActionPreference='SilentlyContinue';"
+        f"$all=Get-ScheduledTask; $hit=$all | ? {{ $_.TaskName -in @({names}) }};"
+        "if($hit){ $hit | ForEach-Object { Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false } }"
+        "; Write-Output ('removed=' + @($hit).Count)")
+    print(f"已卸载（移除 {out.split('removed=')[-1].strip()} 个现存任务；无任务则跳过）")
     return 0
 
 
