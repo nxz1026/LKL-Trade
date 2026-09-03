@@ -1,7 +1,7 @@
 """lkl sim sync: 真实持仓 -> holdings.json（供 DB 对账 position 表）。"""
 from __future__ import annotations
 
-from lkl.broker import client, holdings, queries
+from lkl.broker import client, holdings, queries, remote
 
 
 def _row(p) -> dict:
@@ -16,4 +16,5 @@ def snapshot() -> int:
     client.connect()
     rows = [_row(p) for p in queries.positions()]
     holdings.dump(rows)
+    remote.push("holdings.json")
     return len(rows)

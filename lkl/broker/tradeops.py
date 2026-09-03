@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from lkl.broker import exchange, ledger, trade_date
+from lkl.broker import exchange, ledger, remote, trade_date
 from lkl.models.types import Signal
 from lkl.services.execution import BrokerExecutor
 
@@ -25,6 +25,7 @@ def _run_one(sig: Signal) -> dict:
 def process_once(for_date: str | None = None) -> int:
     """去重执行并合并回报；返回本轮新成交数。"""
     for_date = for_date or trade_date.trade_date()
+    remote.pull("decisions.json")
     decisions = exchange.load_decisions(for_date)
     existing = exchange.load_results(for_date)
     done = {r["ref"] for r in existing} | ledger.load()
@@ -33,6 +34,7 @@ def process_once(for_date: str | None = None) -> int:
     if new:
         exchange.dump_results(for_date, existing + new)
         ledger.mark(item["ref"] for item in new)
+        remote.push("results.json")
     return len(new)
 
 
