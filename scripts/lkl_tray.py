@@ -87,6 +87,7 @@ _bind(user32.TranslateMessage, wt.BOOL, ctypes.POINTER(wt.MSG))
 _bind(user32.DispatchMessageW, _LRESULT, ctypes.POINTER(wt.MSG))
 _bind(user32.PostMessageW, wt.BOOL, wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM)
 _bind(user32.PostQuitMessage, None, ctypes.c_int)
+_bind(user32.SetForegroundWindow, wt.BOOL, wt.HWND)
 kernel32 = ctypes.windll.kernel32
 _bind(kernel32.GetModuleHandleW, wt.HINSTANCE, wt.LPCWSTR)
 shell32.Shell_NotifyIconW.argtypes = [wt.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
@@ -193,7 +194,7 @@ class Tray:
     def _create_window(self) -> None:
         hwnd = user32.CreateWindowExW(
             0, "LKLTrayWnd", "LKL-Trade", 0,
-            0, 0, 0, 0, wt.HWND(-3), None, self._hinst, None)  # HWND_MESSAGE
+            0, 0, 0, 0, None, None, self._hinst, None)  # 普通隐藏窗口(可前台化)，不进任务栏
         if not hwnd:
             raise ctypes.WinError(ctypes.get_last_error() or 87)
         self.hwnd = hwnd
@@ -258,12 +259,18 @@ class Tray:
             ("-", False, None),
             ("退出（停止服务）", True, self._exit),
         ]
-        hmenu, id_map = self._build_menu(acts)
-        pt = wt.POINT()
-        user32.GetCursorPos(ctypes.byref(pt))
-        chosen = user32.TrackPopupMenu(hmenu, _TPM_RETURNCMD | _TPM_RIGHTBUTTON | _TPM_NONOTIFY,
-                                       pt.x, pt.y, 0, self.hwnd, None)
-        user32.DestroyMenu(hmenu)
+        try:
+            hmenu, id_map = self._build_menu(acts)
+            pt = wt.POINT()
+            user32.GetCursorPos(ctypes.byref(pt))
+            user32.SetForegroundWindow(self.hwnd)   # 前台化，菜单才可交互
+            chosen = user32.TrackPopupMenu(
+                hmenu, _TPM_RETURNCMD | _TPM_RIGHTBUTTON | _TPM_NONOTIFY,
+                pt.x, pt.y, 0, self.hwnd, None)
+            user32.DestroyMenu(hmenu)
+        except Exception:
+            self._log_err()
+            return
         if chosen and chosen in id_map and id_map[chosen]:
             cb = id_map[chosen]
             if cb is self._exit:
@@ -281,6 +288,14 @@ class Tray:
             self.notify(_govern(action, note))
         except Exception as e:
             self.notify(f"治理失败：{e}")
+
+    def _log_err(self) -> None:
+        import traceback
+        try:
+            with open(_LOG / "lkl_tray.err", "a", encoding="utf-8") as f:
+                f.write(traceback.format_exc() + "\n")
+        except OSError:
+            pass
 
     def _safe(self, label: str, fn) -> None:
         try:
@@ -303,7 +318,7 @@ class Tray:
         if msg == _WM_APP + 1 and wp == 1:          # 托盘回调(uID=1)
             code = lp & 0xFFFF
             if code == _WM_RBUTTONUP:
-                threading.Thread(target=self._show_menu, daemon=True).start()
+                self._show_menu()      # 必须在窗口线程同步弹（TrackPopupMenu 同线程要求）
             elif code == _WM_LBUTTONDBLCLK:
                 threading.Thread(target=_open_web, daemon=True).start()
             return 0
