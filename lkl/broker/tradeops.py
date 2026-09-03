@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from lkl.broker import exchange, ledger, remote, trade_date
+from lkl.broker import exchange, fileio, ledger, remote, trade_date
+from lkl.broker.archiver import pack_one
+from lkl.broker.cleanup import remove_archived
 from lkl.models.types import Signal
 from lkl.services.execution import BrokerExecutor
 
@@ -23,8 +25,10 @@ def _run_one(sig: Signal) -> dict:
 
 
 def process_once(for_date: str | None = None) -> int:
-    """去重执行并合并回报；返回本轮新成交数。"""
+    """去重执行并合并回报；消费后即归档决策+删远端。"""
     for_date = for_date or trade_date.trade_date()
+    if not (fileio.directory() / "decisions.json").exists():  # 已消费归档
+        return 0
     remote.pull("decisions.json")
     decisions = exchange.load_decisions(for_date)
     existing = exchange.load_results(for_date)
@@ -35,6 +39,9 @@ def process_once(for_date: str | None = None) -> int:
         ledger.mark(item["ref"] for item in new)
     exchange.dump_results(for_date, existing + new)  # 空执行也回写
     remote.push("results.json")
+    if (fileio.directory() / "decisions.json").exists():  # 消费即归档+删远端
+        pack_one("decisions.json", for_date)
+        remove_archived(for_date)
     return len(new)
 
 
