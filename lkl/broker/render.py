@@ -1,7 +1,7 @@
 """展示层：账户信息渲染成可读文本（供 cli 打印）。"""
 from __future__ import annotations
 
-from lkl.broker.models import PositionInfo, UserInfo
+from lkl.broker.models import UserInfo
 
 
 def render_user(u: UserInfo) -> str:
