@@ -84,11 +84,19 @@ def install() -> int:
     ok = 0
     for name, (exe, arg, restart) in _TASKS.items():
         delay = ";$t.Delay='PT1M'" if restart else ""
-        settings = ("New-ScheduledTaskSettingsSet -RestartCount 3 "
-                    "-RestartInterval (New-TimeSpan -Seconds 60)" if restart else "$null")
         trigger = f"$t=New-ScheduledTaskTrigger -AtLogOn{delay}"
-        action = f'$a=New-ScheduledTaskAction -Execute "{exe}" -Argument "{arg}" -WorkingDirectory "{_REPO}"'
-        cmd = f"{trigger};{action};$s={settings};Register-ScheduledTask -TaskName '{name}' -Action $a -Trigger $t -Settings $s -Force -ErrorAction Stop;"
+        arg_clause = f' -Argument "{arg}"' if arg else ""   # 空参数必须省略（验证不允许空串）
+        action = f'$a=New-ScheduledTaskAction -Execute "{exe}"{arg_clause} -WorkingDirectory "{_REPO}"'
+        # 只有重启任务传 -Settings（$null 会触发 Register 参数校验错）
+        if restart:
+            st = ("$s=New-ScheduledTaskSettingsSet -RestartCount 3 "
+                  "-RestartInterval (New-TimeSpan -Seconds 60);")
+            settings = " -Settings $s"
+        else:
+            st, settings = "", ""
+        cmd = (f"{trigger};{action};{st}"
+               f"Register-ScheduledTask -TaskName '{name}' -Action $a -Trigger $t"
+               f"{settings} -Force -ErrorAction Stop;")
         try:
             _ps(cmd)
             st = _ps(f"(Get-ScheduledTask -TaskName '{name}').State")
