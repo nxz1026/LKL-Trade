@@ -29,6 +29,8 @@ def process_once(for_date: str | None = None) -> int:
     if fileio.latest("decisions") is None:  # 已消费归档
         return 0
     remote.pull("decisions")
+    if exchange.decision_date() != for_date:  # 未来日决策留待执行,不消费
+        return 0
     decisions = exchange.load_decisions(for_date)
     existing = exchange.load_results(for_date)
     done = {r["ref"] for r in existing} | ledger.load()
