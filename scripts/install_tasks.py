@@ -37,11 +37,28 @@ def _find_gold() -> str:
 _PY = _default_python()
 _PYW = Path(str(_PY).replace("python.exe", "pythonw.exe"))
 _PYW = _PYW if _PYW.exists() else _PY
+
+
+def _base_pythonw() -> Path:
+    """venv Scripts/pythonw.exe 是 uv launcher stub：任务直启它会驻留 stub 再派生 base
+    python.exe(console)，开机即多一个黑框。改从 pyvenv.cfg home 解析 base 目录的真
+    pythonw（无 stub、无 console、单进程）。托盘本体只 import 标准库，无需 venv 上下文；
+    服务的 venv 环境由 lkl_tray.py 内部经 venv stub(CREATE_NO_WINDOW) 保证。"""
+    try:
+        cfg = (_REPO / ".venv-trade" / "pyvenv.cfg").read_text(encoding="utf-8")
+        for line in cfg.splitlines():
+            if line.startswith("home = "):
+                pw = Path(line[len("home = "):].strip()) / "pythonw.exe"
+                if pw.exists():
+                    return pw
+    except OSError:
+        pass
+    return _PYW  # 兜底(venv stub)
 _GOLD = _find_gold()
 
-# 托盘(LKLTray, pythonw 无黑框) 托管 sup+dash；不再分别注册 console 任务
+# 托盘(LKLTray, base 真 pythonw 无黑框) 托管 sup+dash；不再分别注册 console 任务
 _TASKS = {"LKLGoldminer": (_GOLD, "", False),
-          "LKLTray": (_PYW, "scripts/lkl_tray.py", True)}
+          "LKLTray": (_base_pythonw(), "scripts/lkl_tray.py", True)}
 _LEGACY = ("LKLTradeSup", "LKLDash")   # 旧任务：卸载时一并清理
 
 

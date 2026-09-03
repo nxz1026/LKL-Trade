@@ -118,13 +118,23 @@ class TrayManager:
         return f"{name} 已启动（隐藏）" if self.is_alive(name) else f"{name} 启动失败，见 logs/{name}.log"
 
     def stop(self, name: str) -> str:
+        """停服务：先 terminate，超时或服务经 venv stub 启动(父死 base 会孤儿)
+        则 taskkill 树杀兜底，保证退出托盘时 sup/dash 真身一并消失。"""
         p = self.procs.get(name)
+        pid = p.pid if p else 0
         if p and p.poll() is None:
             p.terminate()
             try:
-                p.wait(timeout=5)
+                p.wait(timeout=4)
             except subprocess.TimeoutExpired:
                 p.kill()
+        if pid:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            try:
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, creationflags=flags, timeout=10)
+            except Exception:
+                pass   # 已退出则 taskkill 报不存在，忽略
         self.procs.pop(name, None)
         return f"{name} 已停止"
 
