@@ -35,11 +35,14 @@ def _find_gold() -> str:
 
 
 _PY = _default_python()
+_PYW = Path(str(_PY).replace("python.exe", "pythonw.exe"))
+_PYW = _PYW if _PYW.exists() else _PY
 _GOLD = _find_gold()
 
+# 托盘(LKLTray, pythonw 无黑框) 托管 sup+dash；不再分别注册 console 任务
 _TASKS = {"LKLGoldminer": (_GOLD, "", False),
-          "LKLTradeSup": (_PY, "-m lkl.main sup", True),
-          "LKLDash": (_PY, "-m lkl.main dash", False)}
+          "LKLTray": (_PYW, "scripts/lkl_tray.py", True)}
+_LEGACY = ("LKLTradeSup", "LKLDash")   # 旧任务：卸载时一并清理
 
 
 def _decode(b: bytes) -> str:
@@ -65,6 +68,8 @@ def preflight() -> list[str]:
     bad = []
     if not _PY.exists():
         bad.append(f"Python 缺失: {_PY}")
+    if not _PYW.exists():
+        bad.append(f"pythonw 缺失: {_PYW}（托盘需无窗口启动）")
     if not Path(_GOLD).exists():
         bad.append(f"金矿终端缺失: {_GOLD}（设 GOLDMINER_EXE 覆盖）")
     return bad
@@ -96,7 +101,8 @@ def install() -> int:
 
 
 def uninstall() -> int:
-    _ps("Unregister-ScheduledTask -TaskName LKLGoldminer,LKLTradeSup,LKLDash -Confirm:$false -ErrorAction SilentlyContinue")
+    names = ",".join(list(_TASKS) + list(_LEGACY))
+    _ps(f"Unregister-ScheduledTask -TaskName {names} -Confirm:$false -ErrorAction SilentlyContinue")
     print("已卸载")
     return 0
 

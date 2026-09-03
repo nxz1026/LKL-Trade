@@ -10,6 +10,8 @@ lkl = "lkl.main:main"
 [project.optional-dependencies]
 # gmtrade 仅 cp<=310，需独立 venv（如 .venv-trade）；从源码运行亦可
 trade = ["gmtrade==3.0.6"]
+# Windows 托盘（可选）：pythonw scripts/lkl_tray.py
+tray = ["pystray>=0.19", "pillow>=10"]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -37,7 +37,7 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
 
 ```bash
 uv venv --python 3.10 .venv-trade
-uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编辑安装 + gmtrade 依赖
+uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade,tray]'   # 可编辑安装 + gmtrade + 托盘(可选)
 ```
 
 > **必须用可编辑（-e）安装**：凭据默认从 `<仓库>/.secrets/gm.env` 读取（`config.py` 按模块路径找仓库根）。
@@ -80,15 +80,19 @@ lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
 lkl archive [YYYY-MM-DD] # 归档已消费文件 → archive/<日期>/
 ```
 
-### 开机自启（Windows 计划任务，需管理员）
+### 开机自启（Windows 计划任务，需管理员）——托盘托管，无黑框
 
 ```bash
-python scripts/install_tasks.py install     # 注册 LKLGoldminer + LKLTradeSup(调度器)
-python scripts/install_tasks.py uninstall   # 卸载
+# 先卸载旧版（会一并清掉旧 LKLTradeSup/LKLDash 黑框任务），再安装
+python scripts/install_tasks.py uninstall
+python scripts/install_tasks.py install     # 注册 LKLGoldminer + LKLTray(托盘, pythonw 无控制台)
+python scripts/lkl_tray.py health           # 托盘依赖/路径自检
+pythonw scripts/lkl_tray.py                 # 手动试跑托盘（图标在通知区）
 ```
 
-> 计划任务的脚本会把终端路径硬编码为当前用户路径，安装前请人工核对 `install_tasks.py` 中
-> `_GOLD`/`.venv-trade` 路径，注册后到「任务计划程序」逐项验收。
+托盘（`scripts/lkl_tray.py`）开机自动隐藏启动 **sup(调度) + dash(看板)** 到 `logs/`；
+右键菜单：启停 sup/dash、演练/实盘/紧急停止/解除、打开看板、退出（退出停止托管服务）。
+**切换前先关闭旧的两个 python 黑框**，避免 8200 端口/双调度冲突。
 
 ## 目录
 
