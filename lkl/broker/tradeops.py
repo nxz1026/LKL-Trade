@@ -32,9 +32,9 @@ def process_once(for_date: str | None = None) -> int:
     todo = [s for s in decisions if _ref(s) not in done]
     new = [item for s in todo if (item := _run_one(s))]
     if new:
-        exchange.dump_results(for_date, existing + new)
         ledger.mark(item["ref"] for item in new)
-        remote.push("results.json")
+    exchange.dump_results(for_date, existing + new)  # 空执行也回写
+    remote.push("results.json")
     return len(new)
 
 
