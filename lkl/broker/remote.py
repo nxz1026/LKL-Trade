@@ -20,9 +20,7 @@ def _scp(a: list) -> bool:
     return subprocess.run(base + a, timeout=30, capture_output=True).returncode == 0
 
 def newest(kind: str) -> str:
-    """远端最新 basename；无则 ''。"""
-    return _ssh(["sh", "-c",
-                 f"ls -1t {config.remote_dir()}/{kind}_*.json 2>/dev/null | head -n1"])
+    return _ssh(["sh", "-c", f"ls -1t {config.remote_dir()}/{kind}_*.json 2>/dev/null | head -n1"])
 
 
 def rm(base: str) -> bool:

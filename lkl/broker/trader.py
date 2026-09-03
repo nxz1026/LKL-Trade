@@ -1,7 +1,6 @@
 """lkl trade CLI 分发：trade [date] 一次 或 trade watch 循环盯盘。"""
 from __future__ import annotations
 
-from datetime import date
 
 
 def run(argv: list[str]) -> int:

@@ -2,15 +2,11 @@
 from __future__ import annotations
 import logging
 import time
-from lkl.broker import gate, remote, session
+from lkl.broker import gate, remote, schedule, session
 from lkl.broker.archiver import pack; from lkl.broker.cleanup import remove_archived; from lkl.broker.sync import snapshot; from lkl.broker.tradeops import process_once
 
 log = logging.getLogger("lkl.supervisor")
 _RETRY, _MIN = 30, 60
-
-def _poll_now(t) -> bool:
-    h, m = t.hour, t.minute
-    return (h == 12 and 1 <= m <= 59) or (h == 17 and 30 <= m) or (h == 18 and m <= 1)
 
 def run(argv: list[str]) -> int:
     interval = int(argv[0]) if argv and argv[0].isdigit() else 60
@@ -31,7 +27,7 @@ def run(argv: list[str]) -> int:
             if n:
                 log.info("本轮实单 %d 单", n)
             time.sleep(min(_MIN, interval))
-        elif _poll_now(dt):
+        elif schedule.in_read_window(dt):
             remote.pull("decisions")
             time.sleep(_MIN)
         else:

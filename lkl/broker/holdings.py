@@ -1,7 +1,6 @@
 """真实持仓快照：写 holdings_{时间戳}.json，供 DB 侧对照 position 表、对账。"""
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
 
 from lkl.broker import config, fileio
