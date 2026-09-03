@@ -20,14 +20,13 @@ def _account() -> dict:
 
 def _orders() -> list:
     try:
-        return [{"id": r.order_id, "status": r.status}
-                for r in status.list_status()]
+        return status.list_orders()
     except Exception:
         return []
 
 
 def state(for_date: str | None = None) -> dict:
-    """;当日决策/成交回报/账户/委托聚合。"""
+    """当日决策/成交回报/账户/委托聚合。"""
     for_date = for_date or date.today().isoformat()
     return {
         "for_date": for_date,
