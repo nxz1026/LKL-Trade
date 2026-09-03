@@ -8,7 +8,7 @@
 | 1 | **window=NONE 语义** ⚠ | 视为「明确不交易」→ EXCLUDED：不进单、不重试 | 真意是“本次不交易”还是“窗口不限”？若是后者我方会漏单，必须二选一 |
 | 2 | results 行字段 | 消费字段 `action/code/ok/price/shares/order_id/reason`；另带 `status/status_label/note/traded_at/confirmed/ref` | 附加字段 DB 忽略即可？`reason` 空时我方回填决策原因（兼容 SELL 成功“断板卖出”）可否接受 |
 | 3 | SELL 未成交 | `ok:false`，保留自动重试（当日 ≤3 次），recon 标“待处理” | DB 语义=保持持仓 OPEN、**次日发新 for_date** 重试？（勿重发同日——我方 ref 含日期） |
-| 4 | decisions 删/保留归属 ⚠ | 默认执行后自删；`GM_KEEP_REMOTE=1` 保留原文件 | DB 会否对保留的旧 decisions 重复消费？KEEP 场景是否由 DB 侧移 `consumed/` 才算消费 |
+| 4 | decisions 删/保留归属 ✅ | **已拍板：先归档本地 `archive/<日期>/` → 再删远端**（`for_date==day` 守卫防误删新一天投递；`GM_KEEP_REMOTE=1` 才保留远端，作审计追溯） | DB 侧**只投递、不删不标记**；远端 decisions 生命周期归交易端。建议 DB 消费依据用 `results/holdings`（带 `ref`）；若仍直接消费 decisions，请按 `for_date|code|action` 幂等（同一文件重复读无副作用，删的是远端副本） |
 | 5 | 空执行回执 | 有 decisions 文件必写 results（含 `trades:[]`）；无文件不写 | 以“收到 results”判定交易端已处理，是否与我方一致 |
 | 6 | holdings 字段 | `price`(=last_price) 新增，保留 `vwap/last_price`；code 无前缀、symbol 带前缀 | DB 用 price 还是 vwap？全量 DELETE+重建语义按你方文档 |
 | 7 | 多用户归属 | results/holdings 写各自 user1/user2 目录，行内无 account | DB 按目录区分账户即可？还是需要文件/行内带 account_id |

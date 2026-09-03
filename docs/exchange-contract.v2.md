@@ -14,7 +14,9 @@
 - `code` 6位无前缀；`action ∈ BUY|SELL`；`volume`：BUY=0 / SELL=建议股数。
 - `window`：`""`/`ANY`/`DAY` 放行；`MORNING`/`AFTERNOON` 仅对应时段放行；
   `NONE` 或未识别 → **EXCLUDED 不进单**（交易端明确不触发订货）。
-- 交易端读取（文件名倒序取当 for_date 最新）→ 执行 → **自删该 decisions 文件**。
+- 交易端读取（文件名倒序取当 for_date 最新）→ 执行 → 结果写 results → **先归档本地
+  `archive/<日期>/`（副本落盘）→ 再删除远端该 decisions**（`for_date==day` 守卫，绝不误删
+  新一天投递）。DB 侧只投递、不需要对 decisions 做任何删除/消费标记。
 
 ## 2. results（交易端 → DB，每次执行写新时间戳文件）
 
@@ -58,7 +60,8 @@
 ## 6. 幂等与归档
 
 - 交易端「写完 results/holdings 新文件即可」，db 侧归档移走；不做重复写。
-- 交易端唯一主动 `rm` 的是自己已执行的 decisions（`GM_KEEP_REMOTE=1` 时保留供对账追溯）。
+- 交易端唯一主动 `rm` 的是“已归档本地”的 decisions（默认即删远端）；`GM_KEEP_REMOTE=1`
+  时保留远端原文件供对账/审计追溯（本地照常归档，不影响后续执行防重）。
 - 本地衍生文件（交易端自己维护、**不进 v2 契约、不上传远端**）：`executed.json`(防重账本)、
   `pending.json`(下单意图)、`governance.json`(演练/实盘/急停)、`resolved.json`(人工处置留痕)、
   `heartbeat.json`(本地进程脉冲)、`alerts.jsonl`(分级告警)。跨机存活证据=results/holdings 文件本身。

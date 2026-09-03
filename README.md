@@ -58,7 +58,7 @@ uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编�
 | `GM_RISK_MAX_ORDERS` | 0 | 风控：当日最大下单次数（0=不限） |
 | `GM_RISK_MAX_CODES` | 0 | 风控：当日最多操作只数（0=不限） |
 | `GM_RECON_ORDERS` | 0 | 对账时联券商当日委托核验（需终端登录） |
-| `GM_KEEP_REMOTE` | 0 | 1=最终确认前不自动删远端已消费 decisions（可追溯） |
+| `GM_KEEP_REMOTE` | 0 | 0(默认)=已执行决策**先归档本地再删远端**(for_date 守卫)；1=保留远端原文件作审计追溯 |
 | `GM_REMOTE_HOST/KEY/DIR` | — | 受限 SFTP 同步（v2）；`DIR`=你的用户子目录（如 `user1`），禁 `..`/绝对路径 |
 
 ## 用法（`.venv-trade/Scripts/python -m lkl.main …`）
