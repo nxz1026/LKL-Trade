@@ -23,8 +23,9 @@ def run(argv: list[str]) -> int:
         if day != today:
             today = day
             _daily()
-        if not gate.up():
-            log.warning("金矿终端不在线，%s 秒后重试", _RETRY)
+        if not gate.account_ready():
+            tip = "金矿终端不在线" if not gate.up() else "终端在但账户未连接"
+            log.warning("%s，%s 秒后重试", tip, _RETRY)
             time.sleep(_RETRY)
             continue
         if session.is_open(dt):

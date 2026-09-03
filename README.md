@@ -47,8 +47,14 @@ lkl sim                  # 账户资金/持仓
 lkl sim sync             # 真实持仓 → holdings.json
 lkl trade check          # 三文件日期一致性 + 决策执行覆盖(出错返回非0)
 lkl trade [YYYY-MM-DD]   # 执行当日 decisions → results.json
-lkl trade watch 60       # 盘中轮询决策并实单(去重、防重)
+lkl sup [interval=60]    # 常驻调度器：跨日sync/check + 盘中自动实单(终端离线自愈)
 lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
+```
+
+### 开机自启（Windows 计划任务，需管理员）
+```bash
+python scripts/install_tasks.py install     # 注册 LKLGoldminer(终端自启)+LKLTradeSup(调度器)
+python scripts/install_tasks.py uninstall   # 卸载
 ```
 
 ## 目录
