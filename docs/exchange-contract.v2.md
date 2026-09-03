@@ -12,8 +12,16 @@
                 "volume": 100, "window": "NONE"} ] }
 ```
 - `code` 6位无前缀；`action ∈ BUY|SELL`；`volume`：BUY=0 / SELL=建议股数。
-- `window`：`""`/`ANY`/`DAY` 放行；`MORNING`/`AFTERNOON` 仅对应时段放行；
-  `NONE` 或未识别 → **EXCLUDED 不进单**（交易端明确不触发订货）。
+- `window`（DB 已拍板：**NONE/空 = 本次不交易**）：
+  | 值 | 语义 | 交易端行为 |
+  |---|---|---|
+  | `ANY`/`DAY` | 全天不限 | 放行，盘内下单 |
+  | `""`/漏填 | 同 NONE：本次不交易 | EXCLUDED，不进单 |
+  | `MORNING` | 上午盘执行 | 仅 9:30–11:30 放行，过期 EXCLUDED |
+  | `AFTERNOON` | 下午盘执行 | 仅 13:00–15:00 放行，过期 EXCLUDED |
+  | `NONE` | **本次不交易**（建议仅作记录/观察，勿下单） | **EXCLUDED：不进单、不重试、绝不下单** |
+  | 未识别值 | 保守同 NONE | EXCLUDED 不进单 |
+  **结论：`NONE`/`""`/未识别 = “本次不交易”；只有显式 `ANY/DAY/MORNING/AFTERNOON` 才会下单。**
 - 交易端读取（文件名倒序取当 for_date 最新）→ 执行 → 结果写 results → **先归档本地
   `archive/<日期>/`（副本落盘）→ 再删除远端该 decisions**（`for_date==day` 守卫，绝不误删
   新一天投递）。DB 侧只投递、不需要对 decisions 做任何删除/消费标记。
