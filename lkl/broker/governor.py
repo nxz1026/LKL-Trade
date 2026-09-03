@@ -14,7 +14,7 @@ from datetime import datetime
 
 from lkl.broker import alerts, config, fileio, session
 
-_DEFAULTS = {"mode": "dry", "halt": False, "reason": "", "updated_at": ""}
+_DEFAULTS = {"mode": "dry", "halt": False, "reason": "", "account": "", "updated_at": ""}
 
 
 def _path():
@@ -41,14 +41,32 @@ def _save(g: dict) -> None:
 
 
 def set_mode(mode: str, reason: str = "") -> dict:
+    """切模式；进入 armed 时记录当前配置账户为绑定账户（产品7-7）。"""
     if mode not in ("dry", "armed"):
         raise ValueError(f"非法模式 {mode!r}（dry|armed）")
     g = state()
     g["mode"] = mode
+    if mode == "armed" and not g.get("account"):
+        g["account"] = config.account_id() or ""
     if reason:
         g["reason"] = reason
     _save(g)
     return g
+
+
+def bound_account() -> str:
+    return state().get("account") or ""
+
+
+def verify_binding() -> tuple[bool, str]:
+    """账户—策略绑定校验：当前配置账户若与绑定时不一致则不得交易。"""
+    bound = bound_account()
+    cur = config.account_id()
+    if not bound or not cur:
+        return True, ""
+    if cur != bound:
+        return False, f"账户绑定 {bound} ≠ 当前配置 {cur}，拒绝沿用旧账本/旧决策"
+    return True, ""
 
 
 def halt(reason: str = "") -> dict:
@@ -73,6 +91,9 @@ def allow_trade() -> tuple[bool, str]:
         return False, "已紧急停止"
     if g.get("mode") != "armed":
         return False, "演练(dry)模式，未 arm，不自动下单"
+    ok, why = verify_binding()
+    if not ok:
+        return False, why
     return True, ""
 
 
@@ -93,7 +114,9 @@ def run_cli(action: str, reason: str = "") -> str:
     if a == "status":
         g = state()
         mode = "实盘(armed)" if g["mode"] == "armed" else "演练(dry)"
+        inflight = _inflight_count()
         return (f"模式: {mode} | 紧急停止: {'是' if g.get('halt') else '否'} | "
+                f"绑定账户: {g.get('account') or '-'} | 在途未成: {inflight} | "
                 f"原因: {g.get('reason') or '-'} | 更新: {g.get('updated_at') or '-'}")
     if a == "dry":
         set_mode("dry", reason)
@@ -102,9 +125,19 @@ def run_cli(action: str, reason: str = "") -> str:
         set_mode("armed", reason)
         return "已切实盘(armed)模式——可自动下单"
     if a == "halt":
+        inflight = _inflight_count()
         halt(reason or "人工紧急停止")
-        return "已紧急停止（持久，重启仍停）"
+        tail = f"；注意：仍有 {inflight} 笔在途(已报未成)委托待核对" if inflight else ""
+        return f"已紧急停止（持久，重启仍停）{tail}"
     if a == "resume":
         resume()
         return "已解除停止"
     return "未知动作（status|dry|arm|halt|resume）"
+
+def _inflight_count() -> int:
+    try:
+        from lkl.broker import intent
+        recs = intent.load()
+        return sum(1 for r in recs.values() if r.get("order_id"))
+    except Exception:
+        return 0

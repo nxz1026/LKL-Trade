@@ -84,13 +84,16 @@ def _reconcile(executor) -> None:
 
 
 def preview(for_date: str | None = None) -> int:
-    """交易前预演：打印可执行/受阻计划，不出单、不落盘。返回计划条数。"""
+    """交易前预演（产品7-1）：展示执行日/是否交易日/账户/每笔计划与阻断，不下单。"""
     for_date = for_date or trade_date.trade_date()
     with single_executor():
         remote.pull("decisions")
         src = exchange.decision_file(for_date)
+        is_day = session2().is_trading_day()
+        acc = config2().account_id() or "-"
+        print(f"[预演 {for_date}] 交易日={'是' if is_day else '否'} 账户={acc} 模式={governor.state()['mode']}（只读不下单）")
         if src is None:
-            print(f"{for_date}: 今日无可执行动作")
+            print("  无可执行动作（今日无待处理决策）")
             return 0
         decisions = exchange.load_decisions(for_date, path=src)
         done = ledger.load()
@@ -98,7 +101,7 @@ def preview(for_date: str | None = None) -> int:
         by_ref: dict[str, list] = {}
         for r in attempts:
             by_ref.setdefault(r["ref"], []).append(r)
-        print(f"{for_date} 预演（只读，不下单）")
+        prices = _price_map()
         count = 0
         for sig in decisions:
             ref = _ref(sig)
@@ -113,14 +116,44 @@ def preview(for_date: str | None = None) -> int:
             if intent.has(ref):
                 reasons.append("在途待对账")
             qty = sig.volume or 100
+            est = ""
+            if sig.action == "BUY" and prices.get(sig.code):
+                est = f" 约占用 ¥{qty * prices[sig.code]:,.0f}@{prices[sig.code]}"
             if sig.action == "BUY":
                 b, why = governor.risk_block(qty, len(attempts), len({r.get("code") for r in attempts}))
                 if b:
                     reasons.append(why)
             count += 1
-            print(f"  {sig.action:<4} {sig.code}  拟{qty}股  "
+            print(f"  {sig.action:<4} {sig.code}  拟{qty}股{est}  "
                   + ("✓ 可执行" if not reasons else "✗ " + "；".join(reasons)))
         return count
+
+
+def config2():
+    from lkl.broker import config
+    return config
+
+
+def session2():
+    from lkl.broker import session
+    return session
+
+
+def _price_map() -> dict:
+    """已知最新价（持仓快照/实时持仓），用于预演资金占用粗估。"""
+    out = {}
+    for p in _try_positions():
+        code = p.symbol.rsplit(".", 1)[-1]
+        out[code] = p.last_price or 0.0
+    return out
+
+
+def _try_positions() -> list:
+    try:
+        from lkl.broker import queries
+        return queries.positions()
+    except Exception:
+        return []
 
 
 def process_once(for_date: str | None = None, executor=None) -> int:

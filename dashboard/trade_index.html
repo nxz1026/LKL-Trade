@@ -19,6 +19,7 @@ button{margin-right:.4rem;font-size:.8rem}
 </style></head>
 <body>
 <h1>LKL 交易看板</h1>
+<div id="banner" class="sub" style="font-size:.95rem;padding:.4rem .6rem;border:1px solid #e3e5e8;border-radius:6px;background:#fff;margin:.3rem 0">加载中…</div>
 <div id="tabs">
   <div class="tab on" data-v="trade" onclick="show('trade')">股票交易</div>
   <div class="tab" data-v="sys" onclick="show('sys')">系统运行状态</div>
@@ -58,6 +59,7 @@ async function load(){
 async function loadSys(){
   const s=await (await fetch('/api/sys')).json();
   const hb=s.heartbeat||{};
+  renderBanner(s,hb);
   const term=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${esc(s.terminal)}</span> `+
     `<span class="pill ${s.account_ready?'o':'x'}">账户 ${s.account_ready?'已连':'未连接'}</span>`;
   $('env').innerHTML=`<div class="cash"><b>端点 ${esc(s.endpoint)}</b><b>${term}</b>`+
@@ -72,6 +74,17 @@ async function loadSys(){
       keys.slice(1).map(k=>{ if(k==='today')return `<td class="${ok?'ok':'mid'}">${esc(f.today?'今日':'陈旧')}</td>`;
         return `<td>${esc(f[k])}</td>`; }).join('')+'</tr>'; }).join('');
   $('files').innerHTML='<table>'+th+rows+'</table>';
+}
+function renderBanner(s,hb){
+  const el=$('banner'); if(!el)return;
+  const gov=s.govern||{};
+  const mode=s.auto_trade?'<span class="pill o">实盘·自动交易 ON</span>'
+    :(gov.halt?'<span class="pill x">已紧急停止</span>':'<span class="pill m">演练/只读</span>');
+  const alive=hb.stale!==true&&hb.last_success?'<span class="pill o">调度存活</span>':'<span class="pill x">调度疑似停止/无心跳</span>';
+  const cred=s.creds_ok===false?'<span class="pill x">凭证缺失</span>':'';
+  const term2=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${esc(s.terminal)}</span>`;
+  const bound=s.bound_account?`· 绑定账户 ${esc(s.bound_account)}`:'';
+  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} · 心跳 ${esc(hb.last_success||'—')}`;
 }
 function renderGovern(s){
   const el=$('govern'); if(!el)return;

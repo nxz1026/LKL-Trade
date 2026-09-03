@@ -97,3 +97,29 @@ class _Filled:
         from lkl.broker.orderstate import OrderStatus
         from lkl.broker.result import ExecResult
         return ExecResult(order_id, OrderStatus.NOT_FOUND)
+
+
+def test_account_binding_blocks_when_changed(env, monkeypatch):
+    from lkl.broker import config, governor, tradeops
+    _put(env, [{"code": "601988", "action": "BUY"}])
+    monkeypatch.setattr(config, "account_id", lambda: "acc-1")
+    governor.set_mode("armed", "绑定 acc-1")
+    ex = _Filled()
+    assert tradeops.process_once(executor=ex) == 1        # 账户一致→放行
+    assert len(ex.submits) == 1
+    monkeypatch.setattr(config, "account_id", lambda: "acc-2")   # 账户变化
+    ok, why = governor.allow_trade()
+    assert ok is False and "acc-1" in why and "acc-2" in why
+    ex2 = _Filled()
+    assert tradeops.process_once(executor=ex2) == 0        # 拒绝沿用旧账本
+    assert ex2.submits == []
+
+
+def test_bound_account_recorded_on_arm(env, monkeypatch):
+    from lkl.broker import config, governor
+    monkeypatch.setattr(config, "account_id", lambda: "acc-9")
+    governor.set_mode("armed")
+    assert governor.bound_account() == "acc-9"
+    assert "acc-9" in governor.run_cli("status")
+    governor.set_mode("dry")
+    assert governor.bound_account() == "acc-9"   # 绑定持久保留，防止误配换账

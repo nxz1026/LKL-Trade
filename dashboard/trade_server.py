@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dashboard.trade_state import state
 from dashboard.sys_state import state as sys_state
-from lkl.broker import alerts, governor, recon, schedule, session
+from lkl.broker import alerts, governor, recon, schedule, session, tradeops
 
 _HTML = Path(__file__).with_name("trade_index.html")
 
@@ -23,6 +23,19 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sys":
             self._send(200, "application/json",
                        json.dumps(sys_state(), ensure_ascii=False, default=str).encode("utf-8"))
+        elif self.path.startswith("/api/preview"):
+            d = self.path.partition("?")[2] or None
+            import io, contextlib
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                try:
+                    tradeops.preview(d)
+                    err = ""
+                except Exception as e:
+                    err = f"{type(e).__name__}: {e}"
+            self._send(200, "application/json",
+                       json.dumps({"text": buf.getvalue().strip(), "error": err},
+                                  ensure_ascii=False).encode("utf-8"))
         elif self.path == "/api/alerts":
             recs = alerts.list_alerts(200)
             self._send(200, "application/json",
