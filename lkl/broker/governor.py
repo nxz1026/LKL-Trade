@@ -122,6 +122,13 @@ def run_cli(action: str, reason: str = "") -> str:
         set_mode("dry", reason)
         return "已切演练模式（不自动下单）"
     if a == "arm":
+        try:
+            from lkl.broker import doctor
+            ok, fails = doctor.quick()
+        except Exception as e:
+            ok, fails = False, [f"自检异常: {e}"]
+        if not ok:
+            return "切实盘被拒：关键自检未过 → " + "; ".join(fails) + "（先 lkl doctor）"
         set_mode("armed", reason)
         return "已切实盘(armed)模式——可自动下单"
     if a == "halt":

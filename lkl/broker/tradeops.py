@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from lkl.broker import alerts, exchange, governor, intent, ledger, policy, remote, trade_date
+from lkl.broker import alerts, exchange, governor, intent, ledger, policy, remote, resolve, trade_date
 from lkl.broker.archiver import archive_one
 from lkl.broker.cleanup import remove_archived
 from lkl.broker.lock import single_executor
@@ -189,8 +189,16 @@ def process_once(for_date: str | None = None, executor=None) -> int:
         new_confirmed: list[str] = []
         all_settled = True
 
+        verdicts = resolve.load()
         for sig in decisions:
             ref = _ref(sig)
+            verdict = resolve.apply(verdicts, ref)
+            if verdict == "skip":
+                continue                      # 人工 ignore：不自动下单
+            if verdict == "done":
+                if ref not in done:
+                    ledger.mark([ref])        # 人工 complete：按成交防重
+                continue
             if ref in done or any(_st(r["status"]).terminal
                                   for r in by_ref.get(ref, [])):
                 continue
@@ -254,5 +262,12 @@ def process_once(for_date: str | None = None, executor=None) -> int:
 
         if all_settled and decisions:
             archive_one(src)
-            remove_archived(for_date)
+            if not _keep_remote():
+                remove_archived(for_date)
         return len(new_confirmed)
+
+
+def _keep_remote() -> bool:
+    """GM_KEEP_REMOTE=1：最终成交/对账确认前不自动删远端决策（可追溯）。"""
+    import os
+    return os.environ.get("GM_KEEP_REMOTE", "") == "1"

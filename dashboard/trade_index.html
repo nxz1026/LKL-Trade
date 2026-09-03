@@ -29,7 +29,7 @@ button{margin-right:.4rem;font-size:.8rem}
 
 <section id="trade" class="screen on">
   <h2>账户</h2><div class="card" id="account">-</div>
-  <h2>当日待执行（decisions）</h2><div class="card" id="decisions">-</div>
+  <h2>当日待执行（decisions）</h2><div class="card" id="decisions">-</div><div id="decmeta" class="sub">-</div>
   <h2>执行回报（results）</h2><div class="card" id="results">-</div>
   <h2>今日委托</h2><div class="card" id="orders">-</div>
   <h2>对账（四源一致）</h2><div class="card" id="recon">-</div>
@@ -54,7 +54,7 @@ async function load(){
   const s=await (await fetch('/api/state')).json();
   renderAccount(s.account); renderDecisions(s.decisions);
   renderResults(s.results); renderOrders(s.orders);
-  fetchRecon(); fetchAlerts();
+  fetchRecon(); fetchAlerts(); fetchVersions(s.for_date);
 }
 async function loadSys(){
   const s=await (await fetch('/api/sys')).json();
@@ -64,7 +64,7 @@ async function loadSys(){
     `<span class="pill ${s.account_ready?'o':'x'}">账户 ${s.account_ready?'已连':'未连接'}</span>`;
   $('env').innerHTML=`<div class="cash"><b>端点 ${esc(s.endpoint)}</b><b>${term}</b>`+
     `<b>${s.trading_day?'交易日':'非交易日'}</b><b>${esc(s.phase)}</b></div>`+
-    `<div class="sub">最后心跳 ${esc(hb.last_success||'—')} · ${esc(hb.note||'')}</div>`;
+    `<div class="sub">下一可交易 ${esc(s.next_open||'休市/今日无')} · 进程脉冲 ${esc(hb.last_success||'—')}</div>`;
   renderGovern(s);
   const keys=['exists','size','mtime','today','schema','for_date','parse'];
   const th='<tr><th>文件</th>'+keys.map(k=>`<th>${esc(k)}</th>`).join('')+'</tr>';
@@ -136,6 +136,13 @@ function renderOrders(obj){
     +rows.map(o=>`<tr><td title="${esc(o.full_id)}" class="sub">${esc(o.id)}</td><td>${esc(o.symbol)}</td><td>${esc(o.side)}</td><td>${num(o.volume)}</td>`
     +`<td>${o.price?num(o.price):'市价'}</td><td>${num(o.filled)}</td><td>${num(o.remaining)}</td><td>${esc(o.status_label||o.status)}</td></tr>`).join('')+'</table>';
 }
+async function fetchVersions(d){
+  try{ const v=await (await fetch('/api/versions?'+d)).json();
+    const a=await (await fetch('/api/archive?'+d)).json();
+    const el=$('decmeta'); if(!el)return;
+    const cur=v.versions.filter(x=>x.active).length;
+    el.textContent=`决策文件版本 ${v.versions.length} · 当前生效 ${cur} · 已归档 ${a.count}`;
+  }catch(e){} }
 async function fetchRecon(){
   try{ const r=await (await fetch('/api/recon')).json();
     const el=$('recon'); const s=r.summary||{};

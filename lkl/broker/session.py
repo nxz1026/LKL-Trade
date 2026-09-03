@@ -47,3 +47,18 @@ def pre_open(dt: datetime | None = None) -> bool:
     """盘前 08:00~09:30（偏持仓快照/对账窗口）。"""
     t = (dt or now()).time()
     return time(8, 0) <= t < time(9, 30)
+
+
+def next_open(dt: datetime | None = None) -> datetime | None:
+    """下一个可交易时段起点（跳过周末/休市日）；今日无则 None。"""
+    from datetime import timedelta
+    base = dt or now()
+    if base.time() < _MORNING[0] and is_trading_day(base):
+        return base.replace(hour=9, minute=30, second=0, microsecond=0)
+    if _MORNING[0] <= base.time() <= time(11, 30):
+        return base.replace(hour=13, minute=0, second=0, microsecond=0)
+    for i in range(1, 8):
+        cand = base.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=i)
+        if is_trading_day(cand):
+            return cand
+    return None

@@ -14,6 +14,15 @@ def _trade(argv):
     if argv and argv[0] == "recon":
         from lkl.broker import recon
         return recon.run(argv[1] if len(argv) > 1 else None)
+    if argv and argv[0] == "resolve":
+        from lkl.broker import resolve
+        if len(argv) < 3:
+            print("用法: lkl trade resolve <ref|for_date> <retry|ignore|complete> [note]")
+            return 1
+        ref, act = argv[1], argv[2]
+        note = " ".join(argv[3:]) if len(argv) > 3 else ""
+        print(resolve.run_cli(ref, act, note))
+        return 0
     if argv and argv[0] == "alerts":
         from lkl.broker import alerts
         s = alerts.summary()
@@ -36,8 +45,14 @@ def _archive(argv):
     from lkl.broker.archiver import run as a; return a(argv)
 
 
+def _doctor(argv):
+    from lkl.broker import doctor
+    return doctor.run()
+
+
 _CMDS = {
     "sim": (_sim, "账户|order|orders|sync"),
+    "doctor": (_doctor, "首次使用自检向导"),
     "trade": (_trade, "check|执行[date]|watch"),
     "sup": (_sup, "交易调度器[interval=60]"),
     "dash": (_dash, "看板 [port]"),

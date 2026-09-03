@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dashboard.trade_state import state
 from dashboard.sys_state import state as sys_state
-from lkl.broker import alerts, governor, recon, schedule, session, tradeops
+from lkl.broker import alerts, fileio, governor, recon, schedule, session, tradeops
 
 _HTML = Path(__file__).with_name("trade_index.html")
 
@@ -23,6 +23,14 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sys":
             self._send(200, "application/json",
                        json.dumps(sys_state(), ensure_ascii=False, default=str).encode("utf-8"))
+        elif self.path.startswith("/api/versions"):
+            d = self.path.partition("?")[2] or None
+            self._send(200, "application/json",
+                       json.dumps(versions_view(d), ensure_ascii=False, default=str).encode("utf-8"))
+        elif self.path.startswith("/api/archive"):
+            d = self.path.partition("?")[2] or None
+            self._send(200, "application/json",
+                       json.dumps(archive_view(d), ensure_ascii=False).encode("utf-8"))
         elif self.path.startswith("/api/preview"):
             d = self.path.partition("?")[2] or None
             import io, contextlib
@@ -89,6 +97,38 @@ def reconcile_state(for_date: str | None = None):
     except Exception as e:
         return {"for_date": for_date or "", "error": f"{type(e).__name__}: {e}",
                 "summary": {"ok": 0, "warn": 0, "total": 0}, "rows": []}
+
+
+def versions_view(for_date: str | None = None) -> dict:
+    """当日 decisions 全部本地版本：文件/时间/是否当前生效。"""
+    import json as _j
+    from pathlib import Path
+    for_date = for_date or session.now().date().isoformat()
+    rows = []
+    for p in fileio.versions("decisions"):
+        try:
+            obj = _j.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if obj.get("for_date") != for_date:
+            continue
+        st = p.stat()
+        from datetime import datetime
+        rows.append({"file": p.name,
+                     "mtime": datetime.fromtimestamp(st.st_mtime, session.TZ).isoformat(timespec="seconds"),
+                     "size": st.st_size,
+                     "active": p == fileio.latest("decisions"),
+                     "archived": (fileio.directory() / "archive" / for_date / p.name).exists()
+                                 or not p.exists()})
+    return {"for_date": for_date, "versions": rows}
+
+
+def archive_view(date: str | None = None) -> dict:
+    """归档检索：archive/<date>/ 下文件清单。"""
+    d = date or session.now().date().isoformat()
+    base = fileio.directory() / "archive" / d
+    names = sorted(x.name for x in base.glob("*.json")) if base.exists() else []
+    return {"date": d, "archived": names, "count": len(names)}
 
 
 def run(argv: list[str]) -> int:

@@ -78,6 +78,8 @@ def state() -> dict:
         "now": now.isoformat(timespec="seconds"),
         "phase": phase,
         "trading_day": session.is_trading_day(now),
+        "next_open": (session.next_open(now).isoformat(timespec="seconds")
+                       if session.next_open(now) else None),
         "endpoint": config.endpoint(),
         "exchange_dir": str(fileio.directory()),
         "terminal": "在线" if gate.up() else "离线",

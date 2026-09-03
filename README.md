@@ -57,6 +57,7 @@ uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编�
 | `GM_RISK_MAX_ORDERS` | 0 | 风控：当日最大下单次数（0=不限） |
 | `GM_RISK_MAX_CODES` | 0 | 风控：当日最多操作只数（0=不限） |
 | `GM_RECON_ORDERS` | 0 | 对账时联券商当日委托核验（需终端登录） |
+| `GM_KEEP_REMOTE` | 0 | 1=最终确认前不自动删远端已消费 decisions（可追溯） |
 | `GM_REMOTE_HOST/KEY/DIR` | — | 受限 SFTP 同步（v2）；`DIR`=你的用户子目录（如 `user1`），禁 `..`/绝对路径 |
 
 ## 用法（`.venv-trade/Scripts/python -m lkl.main …`）
@@ -71,7 +72,10 @@ lkl trade govern <status|dry|arm|halt|resume>  # 安全治理：默认 dry 演�
 lkl trade preview [date] # 交易前预演：逐条可执行/受阻原因，不下单不落盘
 lkl trade recon [date]   # 对账：决策/成交/持仓(±委托) 四源一致，异常返回非0
 lkl trade alerts         # 告警中心：CRIT/WARN 汇总 + 明细
+lkl trade resolve <ref> <retry|ignore|complete> [note]  # 人工处置拒单/部分成交/不符
+lkl doctor               # 首次使用自检向导（切实盘前置要求关键项通过）
 lkl sup [interval=60]    # 常驻调度器：跨日归档/sync/check + 盘中自动下单(单轮异常自动续)
+                                #   GM_KEEP_REMOTE=1：成交/对账前保留远端决策不自动删
 lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
 lkl archive [YYYY-MM-DD] # 归档已消费文件 → archive/<日期>/
 ```

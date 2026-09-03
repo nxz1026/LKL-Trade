@@ -58,7 +58,10 @@
 ## 6. 幂等与归档
 
 - 交易端「写完 results/holdings 新文件即可」，db 侧归档移走；不做重复写。
-- 交易端唯一主动 `rm` 的是自己已执行的 decisions。
+- 交易端唯一主动 `rm` 的是自己已执行的 decisions（`GM_KEEP_REMOTE=1` 时保留供对账追溯）。
+- 本地衍生文件（交易端自己维护、**不进 v2 契约、不上传远端**）：`executed.json`(防重账本)、
+  `pending.json`(下单意图)、`governance.json`(演练/实盘/急停)、`resolved.json`(人工处置留痕)、
+  `heartbeat.json`(本地进程脉冲)、`alerts.jsonl`(分级告警)。跨机存活证据=results/holdings 文件本身。
 
 ## 与旧版差异（DB 需知）
 

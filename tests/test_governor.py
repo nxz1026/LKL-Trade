@@ -73,8 +73,9 @@ def test_risk_block(env, monkeypatch):
     assert governor.risk_block(99999, 0, 0)[0] is False  # 全关=放行
 
 
-def test_cli_governance_roundtrip(env):
-    from lkl.broker import governor
+def test_cli_governance_roundtrip(env, monkeypatch):
+    from lkl.broker import doctor, governor
+    monkeypatch.setattr(doctor, "quick", lambda: (True, []))   # 自检通过才能 arm
     assert "演练" in governor.run_cli("status")
     governor.run_cli("arm")
     assert "实盘" in governor.run_cli("status")
