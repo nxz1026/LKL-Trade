@@ -39,8 +39,6 @@ def decision_date() -> str | None:
     return fileio.read("decisions.json").get("for_date")
 
 def dump_results(for_date: str, trades: list) -> None:
-    """覆盖写 results.json（trades 已去重）。"""
-    fileio.directory().mkdir(parents=True, exist_ok=True)
-    fileio.results_path().write_text(json.dumps(
-        {"schema": _SCHEMA, "for_date": for_date, "trades": trades},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+    """写 results.json（含时间戳副本，trades 已去重）。"""
+    fileio.dump_json("results.json",
+                     {"schema": _SCHEMA, "for_date": for_date, "trades": trades})

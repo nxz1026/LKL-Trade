@@ -16,13 +16,11 @@ def path():
 
 
 def dump(rows: list) -> None:
-    """写 holdings.json（真实仓=权威）。rows 为 broker 持仓明细。"""
-    fileio.directory().mkdir(parents=True, exist_ok=True)
-    path().write_text(json.dumps(
-        {"schema": _SCHEMA, "for_date": date.today().isoformat(),
-         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-         "account": config.account_id(), "holdings": rows},
-        ensure_ascii=False, indent=2), encoding="utf-8")
+    """写 holdings.json（真实持仓快照+时间戳副本）。"""
+    fileio.dump_json("holdings.json",
+                     {"schema": _SCHEMA, "for_date": date.today().isoformat(),
+                      "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                      "account": config.account_id(), "holdings": rows})
 
 
 def load() -> list:

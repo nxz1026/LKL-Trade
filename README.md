@@ -51,6 +51,7 @@ lkl sup [interval=60]    # 常驻调度器：跨日sync/check + 盘中自动实�
 lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
 lkl archive [date]    # 盘后归档已消费文件→ archive/<日期>/（防同名覆盖丢历史）
 # 消费 decisions 后立即归档到 archive/ 并删除远端对应文件（不等待跨日）
+# 生成的 results/holdings 每次落盘固定名 + <名>_YYYYMMDD_HHMMSS 时间戳副本（日内多版本历史）
 ```
 
 ### 开机自启（Windows 计划任务，需管理员）
