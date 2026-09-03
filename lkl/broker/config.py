@@ -1,5 +1,11 @@
 """配置唯一出口：env 优先、回退 .secrets/gm.env；禁散落 os.environ。
-GM_TOKEN/GM_ACCOUNT_ID/GM_ENDPOINT/TRADE_DIR/GM_ENV_FILE/GM_REMOTE_*。"""
+
+交易：GM_TOKEN/GM_ACCOUNT_ID/GM_ENDPOINT/GM_ENV_FILE/TRADE_DIR
+时段：GM_HOLIDAYS(休市日补充)
+风控：GM_RISK_MAX_QTY/GM_RISK_MAX_ORDERS/GM_RISK_MAX_CODES
+对账/追溯：GM_RECON_ORDERS(对账联券商委托)、GM_KEEP_REMOTE(保留远端决策)
+远端：GM_REMOTE_HOST/GM_REMOTE_KEY/GM_REMOTE_DIR(受限SFTP用户子目录)
+模板见 .env.example，取值见 README。"""
 from __future__ import annotations
 import os
 from pathlib import Path

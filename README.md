@@ -19,17 +19,18 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
 
 - **JSON 契约**（`~/trade/`，schema=1）：
   - `decisions.json`（策略→本机）：当日 `for_date` + `actions[]`（每条 code/action/volume/reason/window）
-  - `results.json`（本机→策略）：当日执行明细（`status/status_label/confirmed/filled/remaining/avg_price/reason`）
+  - `results.json`（本机→策略/DB）：当日执行明细，DB 消费 `action/code/ok/price/shares/order_id/reason`
+    （另带 status/status_label/filled/remaining/note/traded_at 供看板与审计，DB 可忽略）
   - `holdings.json`（`lkl sim sync` 刷新）：真实持仓快照（供策略端对账）
   - `executed.json`（本机）：防重账本，**只记已确认成交**（防 results 丢后重复下单）
   - `pending.json`（本机）：下单意图日志（防崩溃在「已下单-未记账」窗口重复提交）
-  - `heartbeat.json` / `last_seen.json`：调度器心跳（最后成功时间，供看板）
+  - `heartbeat.json`：本地进程脉冲（本地看板判 sup 存活；不进 v2 契约、不上传远端）
 - **执行日一致性**：所有业务日期一律 **Asia/Shanghai**。
 - **交易时段**：盘内(9:30-11:30/13:00-15:00)自动执行；周末与休市日（`GM_HOLIDAYS`）不开市；
   任何 `trade / watch / sup` 入口统一在订单层做交易时段门禁（盘外拒单，开市后再试）。
 - **window**：决策 `window` 无明确执行语义（如 `NONE`）→ 该动作**明确排除、不进单**，避免「报告说不交易执行端却买」。
 - **调度窗口**：盘内自动执行当日决策；工作日 12:01-12:59 与 17:30-18:01 每 1 分钟轮询同步决策。
-- **文件命名**：决策/结果/持仓文件带毫秒时间戳（日内多版本真实不覆盖）；读取取当日最新，完成后只看绑定的那一份归档到 `archive/<日期>/`。
+- **文件命名**：`{kind}_YYYYMMDD_HHMMSS.json` 秒级时间戳、Asia/Shanghai(+8)（v2 契约，日内多版本不覆盖）；读取取当日最新，完成后只归档处理的那一份到 `archive/<日期>/`。
 
 ## 安装
 
@@ -90,8 +91,10 @@ python scripts/lkl_tray.py health           # 托盘依赖/路径自检
 pythonw scripts/lkl_tray.py                 # 手动试跑托盘（零第三方依赖，图标在通知区）
 ```
 
-托盘（`scripts/lkl_tray.py`）开机自动隐藏启动 **sup(调度) + dash(看板)** 到 `logs/`；
-右键菜单：启停 sup/dash、演练/实盘/紧急停止/解除、打开看板、退出（退出停止托管服务）。
+托盘（`scripts/lkl_tray.py`，**零第三方依赖**，ctypes+Win32）开机自动隐藏启动 **sup(调度) + dash(看板)**，
+日志在 `logs/sup.log` `logs/dash.log`，异常写 `logs/lkl_tray.err`。
+右键菜单：sup/dash 状态、启停服务、演练/实盘/紧急停止/解除、打开看板、退出（退出停止托管服务）；
+左键双击=打开看板。
 **切换前先关闭旧的两个 python 黑框**，避免 8200 端口/双调度冲突。
 
 ## 目录
@@ -102,7 +105,7 @@ lkl/
   services/  BrokerExecutor（gmtrade 实单）
   dashboard/ 标准库 HTML 看板（账户/决策/回报/委托/对账/告警/治理）
 tests/       pytest 故障注入与契约测试
-docs/        v2 交换契约（对 DB 侧）
+docs/        exchange-contract.v2.md(字段契约) · TESTING.md(测试步骤) · DB-CONFIRM.md(联调确认清单)
 ```
 
 只做交易；无策略、无 DB。
@@ -113,3 +116,4 @@ docs/        v2 交换契约（对 DB 侧）
 - **只有已成交(FILLED)** 进 `executed.json` 防重账本；拒单/部分成交可自动重试（≤3 次留人工）。
 - 单执行器进程锁；先记意图(pending.json)再下单、重启对账，防崩溃重复提交。
 - 风控护栏（`GM_RISK_*`）在订单前拦截；对账不符/风控拦截/急停/调度异常进 `alerts.jsonl` 分级告警。
+- 测试与双端联调：见 `docs/TESTING.md`（分级步骤）与 `docs/DB-CONFIRM.md`（DB 需拍板项）。
