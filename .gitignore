@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-*/
+venv/
+.env
+
+# 数据缓存
+data/raw/
+data/cache/
+*.parquet
+*.csv
+*.duckdb
+*.sqlite
+
+# 回测输出
+output/
+reports/*.html
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+.tools/
+.uv-cache/
+.secrets/
+logs/
+reports/
