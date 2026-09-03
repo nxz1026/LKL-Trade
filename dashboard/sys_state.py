@@ -51,13 +51,30 @@ def _heartbeat() -> dict:
             "stale": stale, "activities": act}
 
 
+
+def _last_file_activity() -> str | None:
+    """本地交换文件最近真实活动（results/holdings/decisions 最新 mtime 最大者）。"""
+    best = None
+    for kind in _FILES:
+        f = fileio.latest(kind)
+        if f:
+            try:
+                ts = datetime.fromtimestamp(f.stat().st_mtime, session.TZ)
+                if best is None or ts > best:
+                    best = ts
+            except OSError:
+                continue
+    return best.isoformat(timespec="seconds") if best else None
+
+
 def state() -> dict:
     now = session.now()
     phase = ("盘中" if session.market_open(now) else
              "盘前" if session.pre_open(now) else "休市")
-    hb = _heartbeat()
+    hb = _heartbeat()          # heartbeat=本地 sup 进程脉冲（只读给同机看板；不进 v2 契约/不推远端）
     gov = governor.state()
     return {
+        "last_file_activity": _last_file_activity(),
         "now": now.isoformat(timespec="seconds"),
         "phase": phase,
         "trading_day": session.is_trading_day(now),

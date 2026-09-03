@@ -84,7 +84,7 @@ function renderBanner(s,hb){
   const cred=s.creds_ok===false?'<span class="pill x">凭证缺失</span>':'';
   const term2=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${esc(s.terminal)}</span>`;
   const bound=s.bound_account?`· 绑定账户 ${esc(s.bound_account)}`:'';
-  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} · 心跳 ${esc(hb.last_success||'—')}`;
+  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} · 进程脉冲 ${esc(hb.last_success||'—')}`+` · 文件活动 ${esc(s.last_file_activity||'—')}`;
 }
 function renderGovern(s){
   const el=$('govern'); if(!el)return;
