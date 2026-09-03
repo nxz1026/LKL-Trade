@@ -6,12 +6,12 @@ import time
 
 from lkl.broker import gate, session
 from lkl.broker.archiver import pack
+from lkl.broker.cleanup import remove_archived
 from lkl.broker.sync import snapshot
 from lkl.broker.tradeops import process_once
 
 log = logging.getLogger("lkl.supervisor")
 _RETRY = 30
-
 def run(argv: list[str]) -> int:
     """lkl supervisor [interval=60]：常驻交易调度（Ctrl+C 退出）。"""
     interval = int(argv[0]) if argv and argv[0].isdigit() else 60
@@ -21,8 +21,8 @@ def run(argv: list[str]) -> int:
         dt = session.now()
         day = dt.date().isoformat()
         if day != today:
-            if today:
-                pack(today)
+            if today and pack(today):  # 昨日已归档成功 → 删远端昨日决策
+                remove_archived(today)
             today = day
             _daily()
         if not gate.account_ready():
