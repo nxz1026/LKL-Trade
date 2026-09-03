@@ -37,7 +37,7 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
 
 ```bash
 uv venv --python 3.10 .venv-trade
-uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade,tray]'   # 可编辑安装 + gmtrade + 托盘(可选)
+uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编辑安装 + gmtrade
 ```
 
 > **必须用可编辑（-e）安装**：凭据默认从 `<仓库>/.secrets/gm.env` 读取（`config.py` 按模块路径找仓库根）。
@@ -87,7 +87,7 @@ lkl archive [YYYY-MM-DD] # 归档已消费文件 → archive/<日期>/
 python scripts/install_tasks.py uninstall
 python scripts/install_tasks.py install     # 注册 LKLGoldminer + LKLTray(托盘, pythonw 无控制台)
 python scripts/lkl_tray.py health           # 托盘依赖/路径自检
-pythonw scripts/lkl_tray.py                 # 手动试跑托盘（图标在通知区）
+pythonw scripts/lkl_tray.py                 # 手动试跑托盘（零第三方依赖，图标在通知区）
 ```
 
 托盘（`scripts/lkl_tray.py`）开机自动隐藏启动 **sup(调度) + dash(看板)** 到 `logs/`；
