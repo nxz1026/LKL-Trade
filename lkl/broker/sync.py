@@ -16,5 +16,5 @@ def snapshot() -> int:
     client.connect()
     rows = [_row(p) for p in queries.positions()]
     holdings.dump(rows)
-    remote.push("holdings.json")
+    remote.push("holdings")
     return len(rows)

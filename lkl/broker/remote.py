@@ -1,50 +1,51 @@
-"""远端策略交换目录 SSH 同步：拉 decisions、推 results/holdings（env 开关，免手工拷贝）。
-
-scp 直连策略机 `/home/ubuntu/DSH/.../trade`；未配置 GM_REMOTE_HOST 时 no-op 走本地。
-"""
+"""远端策略交换目录 SSH 同步：拉/推「最新带时间戳」文件；未配置则纯本地。"""
 from __future__ import annotations
-
-import logging
 import subprocess
-from pathlib import Path
-
 from lkl.broker import config, fileio
-
-log = logging.getLogger("lkl.remote")
 
 
 def enabled() -> bool:
-    """配置了远端主机即启用。"""
     return bool(config.remote_host())
 
 
-def _target() -> str:
-    return f"{config.remote_host()}:{config.remote_dir()}"
+def _ssh(cmd: list) -> str:
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                           "-i", str(config.remote_key()), config.remote_host(), *cmd],
+                          capture_output=True, text=True).stdout.strip()
 
 
-def _scp(args: list) -> bool:
+def _scp(a: list) -> bool:
     base = ["scp", "-q", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-            "-o", "StrictHostKeyChecking=accept-new",
-            "-i", str(config.remote_key())]
-    return subprocess.run(base + args, timeout=30,
-                          capture_output=True).returncode == 0
+            "-o", "StrictHostKeyChecking=accept-new", "-i", str(config.remote_key())]
+    return subprocess.run(base + a, timeout=30, capture_output=True).returncode == 0
+
+def newest(kind: str) -> str:
+    """远端最新 basename；无则 ''。"""
+    return _ssh(["sh", "-c",
+                 f"ls -1t {config.remote_dir()}/{kind}_*.json 2>/dev/null | head -n1"])
 
 
-def pull(name: str) -> bool:
-    """远端 → 本地；未启用/失败返回 False（不阻断本地交易）。"""
+def rm(base: str) -> bool:
+    if not enabled() or not base:
+        return True
+    _ssh(["sh", "-c", f"rm -f '{config.remote_dir()}/{base}'"])
+    return True
+
+
+def pull(kind: str) -> bool:
     if not enabled():
         return True
-    ok = _scp([f"{_target()}/{name}", str(fileio.directory() / name)])
-    if not ok:
-        log.warning("拉取远端 %s 失败", name)
-    return ok
+    name = newest(kind)
+    if not name:
+        return True
+    dst = f"{config.remote_host()}:{config.remote_dir()}/{name}"
+    return _scp([dst, str(fileio.directory() / name)])
 
 
-def push(name: str) -> bool:
-    """本地 → 远端；未启用返回 True。"""
+def push(kind: str) -> bool:
     if not enabled():
         return True
-    ok = _scp([str(fileio.directory() / name), f"{_target()}/"])
-    if not ok:
-        log.warning("推送远端 %s 失败", name)
-    return ok
+    p = fileio.latest(kind)
+    if not p:
+        return True
+    return _scp([str(p), f"{config.remote_host()}:{config.remote_dir()}/"])

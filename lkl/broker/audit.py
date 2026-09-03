@@ -12,11 +12,11 @@ def _label(when: str | None, today: str) -> str:
 
 def run() -> int:
     """打印三文件日期与今日(Shanghai)比对 + 决策执行覆盖率。"""
-    remote.pull("decisions.json")
+    remote.pull("decisions")
     today = trade_date.trade_date()
-    d = fileio.read("decisions.json")
-    r = fileio.read("results.json")
-    h = fileio.read("holdings.json")
+    d = fileio.read("decisions")
+    r = fileio.read("results")
+    h = fileio.read("holdings")
     bad = []
     for name, data in (("decisions", d), ("results", r), ("holdings", h)):
         when = data.get("for_date") or data.get("trade_date")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from lkl.broker import config, fileio, gate, session
 
-_FILES = ("decisions.json", "results.json", "holdings.json", "executed.json")
+_FILES = ("decisions", "results", "holdings")
 
 
 def _finfo(p: Path) -> dict:
@@ -32,5 +32,5 @@ def state() -> dict:
         "exchange_dir": str(fileio.directory()),
         "terminal": "在线" if gate.up() else "离线",
         "account_ready": gate.account_ready(),
-        "files": {n: _finfo(fileio.directory() / n) for n in _FILES},
+        "files": {n: _finfo(fileio.latest(n) or fileio.directory() / (n + ".json")) for n in _FILES},
     }

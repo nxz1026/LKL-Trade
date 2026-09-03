@@ -1,4 +1,4 @@
-"""交换文件路径与 JSON 读取（exchange 的底层 IO，路径来自 config.trade_dir）。"""
+"""交换文件 = 带时间戳名 {kind}_{YYYYMMDD_HHMMSS}.json；读取取最新一份（默认回退固定名）。"""
 from __future__ import annotations
 
 import json
@@ -9,29 +9,27 @@ from lkl.broker import config, session
 
 
 def directory() -> Path:
-    """交换目录（唯一来源 config.TRADE_DIR）。"""
     return config.trade_dir()
 
 
-def decisions_path() -> Path:
-    return directory() / "decisions.json"
+def _stamp() -> str:
+    return datetime.now(session.TZ).strftime("%Y%m%d_%H%M%S")
 
 
-def results_path() -> Path:
-    return directory() / "results.json"
+def latest(kind: str) -> Path | None:
+    """最新一份 {kind}_*.json（按文件名倒序）；无则 None。"""
+    fs = sorted(directory().glob(f"{kind}_*.json"), key=lambda p: p.name, reverse=True)
+    return fs[0] if fs else None
 
 
-def read(name: str) -> dict:
-    """读交换目录下 JSON；文件缺失返回空 dict。"""
-    p = directory() / name
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+def read(kind: str) -> dict:
+    p = latest(kind)
+    return json.loads(p.read_text(encoding="utf-8")) if p else {}
 
 
-def dump_json(name: str, payload: dict) -> None:
-    """写固定名(契约) + 时间戳副本(日内多版本历史)。"""
+def write(kind: str, payload: dict) -> Path:
+    """写 {kind}_{YYYYMMDD_HHMMSS}.json（每份唯一，历史即版本）。"""
     d = directory(); d.mkdir(parents=True, exist_ok=True)
-    body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-    (d / name).write_bytes(body)
-    stem, _, suf = name.rpartition(".")
-    stamp = datetime.now(session.TZ).strftime("%Y%m%d_%H%M%S")
-    (d / f"{stem}_{stamp}.{suf}").write_bytes(body)
+    p = d / f"{kind}_{_stamp()}.json"
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return p

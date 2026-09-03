@@ -1,31 +1,27 @@
-"""真实持仓快照：写 ~/trade/holdings.json，供 DB 侧对照 position 表。"""
+"""真实持仓快照：写 holdings_{时间戳}.json，供 DB 侧对照 position 表、对账。"""
 from __future__ import annotations
 
 import json
 from datetime import date, datetime
 
-from lkl.broker import config, fileio, trade_date
-
+from lkl.broker import config, fileio
 
 _SCHEMA = 1
 
 
 def path():
-    """holdings.json 绝对路径。"""
-    return fileio.directory() / "holdings.json"
+    """最新 holdings 快照路径（无则 None）。"""
+    return fileio.latest("holdings")
 
 
 def dump(rows: list) -> None:
-    """写 holdings.json（真实持仓快照+时间戳副本）。"""
-    fileio.dump_json("holdings.json",
-                     {"schema": _SCHEMA, "for_date": date.today().isoformat(),
-                      "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-                      "account": config.account_id(), "holdings": rows})
+    """写 holdings_{时间戳}.json（真实持仓快照，每份唯一）。"""
+    fileio.write("holdings",
+                 {"schema": _SCHEMA, "for_date": date.today().isoformat(),
+                  "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                  "account": config.account_id(), "holdings": rows})
 
 
 def load() -> list:
-    """读 holdings.json；无文件返回 []。"""
-    p = fileio.directory() / "holdings.json"
-    if not p.exists():
-        return []
-    return json.loads(p.read_text(encoding="utf-8")).get("holdings", [])
+    data = fileio.read("holdings")
+    return data.get("holdings", [])

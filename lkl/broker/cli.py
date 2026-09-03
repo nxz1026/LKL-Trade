@@ -37,7 +37,7 @@ def run(argv: list[str]) -> int:
         elif action == "sync":
             from lkl.broker import holdings, sync
             n = sync.snapshot()
-            print(f"holdings.json 快照 {n} 条 -> {holdings.path()}")
+            print(f"holdings 快照 {n} 条 -> {holdings.path()}")
         else:
             _info()
     except ConnectionError as e:
