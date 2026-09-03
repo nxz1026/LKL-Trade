@@ -13,6 +13,8 @@ def _sup(argv):
     from lkl.supervisor import run as s; return s(argv)
 def _dash(argv):
     from dashboard.trade_server import run as d; return d(argv)
+def _archive(argv):
+    from lkl.broker.archiver import run as a; return a(argv)
 
 
 _CMDS = {
@@ -20,6 +22,7 @@ _CMDS = {
     "trade": (_trade, "check|执行[date]|watch"),
     "sup": (_sup, "交易调度器[interval=60]"),
     "dash": (_dash, "看板 [port]"),
+    "archive": (_archive, "归档已消费文件 [YYYY-MM-DD]"),
 }
 
 

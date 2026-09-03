@@ -49,6 +49,7 @@ lkl trade check          # 三文件日期一致性 + 决策执行覆盖(出错�
 lkl trade [YYYY-MM-DD]   # 执行当日 decisions → results.json
 lkl sup [interval=60]    # 常驻调度器：跨日sync/check + 盘中自动实单(终端离线自愈)
 lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
+lkl archive [date]    # 盘后归档已消费文件→ archive/<日期>/（防同名覆盖丢历史）
 ```
 
 ### 开机自启（Windows 计划任务，需管理员）
