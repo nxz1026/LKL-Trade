@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from dashboard.trade_state import state
+from dashboard.sys_state import state as sys_state
 
 _HTML = Path(__file__).with_name("trade_index.html")
 
@@ -15,7 +16,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", _HTML.read_bytes())
         elif self.path == "/api/state":
-            body = json.dumps(state(), ensure_ascii=False).encode("utf-8")
+            body = json.dumps(state(), ensure_ascii=False, default=str).encode("utf-8")
+            self._send(200, "application/json", body)
+        elif self.path == "/api/sys":
+            body = json.dumps(sys_state(), ensure_ascii=False, default=str).encode("utf-8")
             self._send(200, "application/json", body)
         else:
             self._send(404, "text/plain", b"not found")
