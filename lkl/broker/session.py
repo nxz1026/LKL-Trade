@@ -1,8 +1,15 @@
-"""A股交易时段判定（一律 Asia/Shanghai）。"""
+"""A股交易时段与交易日判定（一律 Asia/Shanghai）。
+
+对应审查 P1-03/P1-04：is_open 只看钟点；is_trading_day 进一步判定周末与
+休市日（节假日），两者合起来才是「真实可下单」。（手工 trade / watch / sup 三个
+入口统一在此门禁，见 policy.market_verdict。）
+"""
 from __future__ import annotations
 
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+
+from lkl.broker import config
 
 TZ = ZoneInfo("Asia/Shanghai")
 
@@ -14,11 +21,26 @@ def now() -> datetime:
     return datetime.now(TZ)
 
 
+def is_trading_day(dt: datetime | None = None) -> bool:
+    """周末与法定休市日（GM_HOLIDAYS）之外的日期。"""
+    d = (dt or now()).date()
+    if d.weekday() >= 5:            # 周六/周日休市
+        return False
+    hols = config.holidays()
+    return d.isoformat() not in hols
+
+
 def is_open(dt: datetime | None = None) -> bool:
-    """处于连续竞价时段。"""
+    """处于连续竞价时段（钟点层面）。"""
     t = (dt or now()).time()
     return (_MORNING[0] <= t <= _MORNING[1] or
             _AFTERNOON[0] <= t <= _AFTERNOON[1])
+
+
+def market_open(dt: datetime | None = None) -> bool:
+    """「今日为交易日」且在竞价时段——真正的可交易判定。"""
+    dt = dt or now()
+    return is_trading_day(dt) and is_open(dt)
 
 
 def pre_open(dt: datetime | None = None) -> bool:

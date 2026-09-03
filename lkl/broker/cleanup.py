@@ -1,10 +1,13 @@
-"""盘后终结：远端已消费并归档的最新 decisions → 删除（for_date 守卫防删新一天）。"""
+"""盘后终结：远端已消费并归档的最新 decisions → 删除（for_date 守卫防删新一天）。
+
+v2：受限 SFTP，无 shell，不能 `cat` 远端文件；改为先把最新 decisions 拉到本地，
+解析 for_date 与 day 一致才删对应文件。
+"""
 from __future__ import annotations
 
-import json
 import logging
 
-from lkl.broker import config, remote
+from lkl.broker import fileio, remote
 
 log = logging.getLogger("lkl.cleanup")
 
@@ -16,12 +19,8 @@ def remove_archived(day: str) -> int:
     base = remote.newest("decisions")
     if not base:
         return 0
-    out = remote._ssh(["cat", f"{config.remote_dir()}/{base}"])
-    try:
-        fd = json.loads(out).get("for_date")
-    except ValueError:
-        log.warning("远端 %s 解析失败，跳过删除", base)
-        return 0
+    remote.pull("decisions")           # 经 sftp 拉回本地解析
+    fd = fileio.read("decisions").get("for_date")
     if fd != day:
         log.info("远端决策 %s 是 %s(≠%s)，保留", base, fd, day)
         return 0

@@ -40,7 +40,7 @@ def run(argv: list[str]) -> int:
             print(f"holdings 快照 {n} 条 -> {holdings.path()}")
         else:
             _info()
-    except ConnectionError as e:
-        print(f"连接失败：{e}")
+    except (ConnectionError, RuntimeError) as e:
+        print(f"{type(e).__name__}: {e}")
         return 1
     return 0

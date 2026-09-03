@@ -3,10 +3,26 @@ from __future__ import annotations
 
 import shutil
 from datetime import datetime
+from pathlib import Path
 
 from lkl.broker import fileio, session
 
 _KINDS = ("decisions", "results", "holdings")
+
+
+def archive_one(src, day=None):
+    """只归档绑定到的一份文件（对应审查 P0-05：不搬同批未处理版本）。"""
+    src = Path(src)
+    day = day or datetime.now(session.TZ).date().isoformat()
+    dest = fileio.directory() / "archive" / day
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / src.name
+    i = 1
+    while target.exists():
+        target = dest / f"{src.stem}_{i}{src.suffix}"
+        i += 1
+    shutil.move(str(src), str(target))
+    return target
 
 
 def consume(kind: str, day: str) -> int:

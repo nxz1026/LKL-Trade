@@ -1,16 +1,24 @@
-"""账户查询：把掘金 proto 拆成模型（须先登录；未连接各函数返回空值）。"""
+"""账户查询：把掘金 proto 拆成模型。
+
+按审查 P1-05：查询失败必须保持失败（抛 `QueryError`）并携带原因，绝不转成空列表
+——下游不得把「查询失败」当成「确实空仓」，不许据错误空仓快照下单。
+"""
 from __future__ import annotations
 
 from .models import CashInfo, PositionInfo
 
 
+class QueryError(RuntimeError):
+    """终端/账户/数据读失败——与「真实空仓」严格区分。"""
+
+
 def cash() -> CashInfo | None:
-    """当前默认账户资金；未连接/失败返回 None。"""
+    """当前默认账户资金；未连接返回 None。"""
     from gmtrade.api import get_cash
     try:
-        raw = get_cash()          # 依赖 login 设置的 default_account
-    except Exception:
-        return None
+        raw = get_cash()
+    except Exception as e:
+        raise QueryError(f"查询资金失败: {e}") from e
     if raw is None:
         return None
     return CashInfo(
@@ -20,15 +28,15 @@ def cash() -> CashInfo | None:
 
 
 def positions() -> list:
-    """当前默认账户全部持仓。"""
+    """当前账户全部持仓；**任何异常上抛 QueryError**（不再吞成空仓）。"""
     from gmtrade.api import get_positions
     try:
         rows = get_positions()
-    except Exception:
-        return []
+    except Exception as e:
+        raise QueryError(f"查询持仓失败: {e}") from e
     return [
         PositionInfo(
             symbol=p.symbol, volume=int(p.volume), available=int(p.available),
             cost=p.cost, vwap=p.vwap, last_price=p.last_price, fpnl=p.fpnl)
-        for p in rows
+        for p in (rows or [])
     ]

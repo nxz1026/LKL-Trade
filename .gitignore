@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 .venv-*/
 venv/
+build/
+dist/
 .env
 
 # 数据缓存

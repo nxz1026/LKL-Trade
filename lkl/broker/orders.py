@@ -1,7 +1,10 @@
-"""实时下单：Signal → 掘金 gmtrade order_volume（市价单）。
+"""实时下单：Signal → 掘金 gmtrade order（市价单），返回权威订单状态。
 
-BUY 默认 1 手(100 股)；SELL 平掉持仓可用量。执行前须本地金矿终端已连账户。
-委托状态查询见 status.py。
+- 状态语义统一到 `OrderStatus`（消除自造布尔/中文状态词）；返回成交数量、
+  均价、剩余数量与拒因（对应审查 P0-02）。
+- SELL 业务契约：`volume>0` = 指定数量（入口校验可用持仓，不足即 NO_POSITION 不下单）；
+  `volume=0` = 清仓（按可用量）。冲突停止，绝不猜测（P1-01）。
+- 门禁：window 语义（P1-02，EXCLUDED=终态）+ 交易日/盘中（P1-03/04，REJECTED=可重试）。
 """
 from __future__ import annotations
 
@@ -9,39 +12,76 @@ from gmtrade.api import (
     OrderSide_Buy, OrderSide_Sell, OrderType_Market,
     PositionEffect_Open, PositionEffect_Close, order_volume,
 )
-from lkl.broker import client, queries, symbol
+from lkl.broker import client, policy, queries, symbol
+from lkl.broker.orderstate import OrderStatus
 from lkl.broker.result import ExecResult
 from lkl.models.types import Signal
 
-_STATUS = {3: "FILLED", 1: "SUBMITTED", 2: "PARTIAL", 8: "REJECTED"}
-_DEFAULT_LOT = 100  # BUY 默认 1 手
+_STATUS = {3: OrderStatus.FILLED, 1: OrderStatus.SUBMITTED,
+           2: OrderStatus.PARTIAL, 8: OrderStatus.REJECTED,
+           4: OrderStatus.CANCELLED, 5: OrderStatus.CANCELLED,
+           6: OrderStatus.CANCELLED, 10: OrderStatus.SUBMITTED,
+           12: OrderStatus.CANCELLED}
+_DEFAULT_LOT = 100  # BUY 未给数量默认 1 手
 _EFFECT = {  # Signal.action → (OrderSide, PositionEffect)
     "BUY": (OrderSide_Buy, PositionEffect_Open),
     "SELL": (OrderSide_Sell, PositionEffect_Close),
 }
 
 
-def _lot(sig: Signal) -> int:
-    """SELL 用持仓可用量；BUY 默认 1 手。"""
-    if sig.action != "SELL":
-        return _DEFAULT_LOT
+def _qty(sig: Signal) -> tuple[int, str]:
+    """结算应下数量（BUY 默认1手；SELL 校验持仓）。返回 (shares, err)。"""
+    if sig.action == "BUY":
+        return (sig.volume or _DEFAULT_LOT), ""
+    avail = 0
     gm = symbol.to_gm_symbol(sig.code)
     for p in queries.positions():
-        if p.symbol == gm and p.available > 0:
-            return p.available
-    return 0
+        if p.symbol == gm:
+            avail = p.available
+    if sig.volume > 0:
+        if avail < sig.volume:
+            return 0, f"SELL指令{sig.volume} > 持仓可用{avail}, 拒绝"
+        return sig.volume, ""
+    return avail, ""  # volume=0 → 清仓
+
+
+def _status_of(o) -> OrderStatus:
+    return _STATUS.get(getattr(o, "status", 0), OrderStatus.UNKNOWN)
+
+
+def _as_result(o) -> ExecResult:
+    st = _status_of(o)
+    vol = getattr(o, "volume", 0) or 0
+    filled = getattr(o, "filled_volume", 0) or 0
+    return ExecResult(
+        getattr(o, "order_id", "") or "",
+        status=st, filled=filled, remaining=max(vol - filled, 0),
+        avg_price=getattr(o, "avg_price", 0.0) or getattr(o, "price", 0.0) or 0.0,
+        reason=(getattr(o, "status_msg", "") or
+                (st.label if not st.retryable else "")),
+    )
 
 
 def submit(sig: Signal, volume: int = 0) -> ExecResult:
-    """按 Signal 下单；订单 id 为空=未成交/无持仓。"""
+    """下市价单；返回含成交明细的权威状态。"""
+    wf = policy.window_verdict(sig)
+    if wf:
+        return wf
+    mg = policy.market_verdict(sig)
+    if mg:
+        return mg
     client.connect()
     side, effect = _EFFECT[sig.action]
-    shares = volume or _lot(sig)
+    shares = volume or sig.volume
     if shares <= 0:
-        return ExecResult("", "NO_POSITION")
+        qty, err = _qty(sig)
+        if err:
+            return ExecResult(status=OrderStatus.NO_POSITION, reason=err)
+        shares = qty
+    if shares <= 0:
+        return ExecResult(status=OrderStatus.NO_POSITION, reason="无可用持仓/数量为零")
     orders = order_volume(symbol.to_gm_symbol(sig.code), shares, side,
                           OrderType_Market, effect, price=0.0)
     if not orders:
-        return ExecResult("", "REJECTED")
-    o = orders[0]
-    return ExecResult(o.order_id, _STATUS.get(o.status, "SUBMITTED"))
+        return ExecResult(status=OrderStatus.REJECTED, reason="券商拒单（无委托返回）")
+    return _as_result(orders[0])

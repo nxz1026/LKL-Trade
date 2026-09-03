@@ -8,6 +8,25 @@ def _sim(argv): from lkl.broker import cli; return cli.run(argv)
 def _trade(argv):
     if argv and argv[0] == "check":
         from lkl.broker.audit import run as a; return a()
+    if argv and argv[0] == "preview":
+        from lkl.broker import tradeops
+        return tradeops.preview(argv[1] if len(argv) > 1 else None)
+    if argv and argv[0] == "recon":
+        from lkl.broker import recon
+        return recon.run(argv[1] if len(argv) > 1 else None)
+    if argv and argv[0] == "alerts":
+        from lkl.broker import alerts
+        s = alerts.summary()
+        print(f"告警汇总：CRIT {s['crit']} / WARN {s['warn']} / 共 {s['total']}")
+        for r in alerts.list_alerts(30):
+            print(f"  [{r['level']}] {r['ts']}  {r['msg']}")
+        return 0
+    if argv and argv[0] == "govern":
+        from lkl.broker import governor
+        action = argv[1] if len(argv) > 1 else "status"
+        reason = argv[2] if len(argv) > 2 else ""
+        print(governor.run_cli(action, reason))
+        return 0
     from lkl.broker import trader; return trader.run(argv)
 def _sup(argv):
     from lkl.supervisor import run as s; return s(argv)

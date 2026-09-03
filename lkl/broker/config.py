@@ -44,3 +44,25 @@ def remote_key() -> Path:
 
 def remote_dir() -> str:
     return _secret("GM_REMOTE_DIR")
+
+
+def holidays() -> tuple:
+    """休市日集合（YYYY-MM-DD 逗号分隔），来自 GM_HOLIDAYS 或 .secrets/gm.env。"""
+    return tuple(x.strip() for x in _secret("GM_HOLIDAYS").split(",") if x.strip())
+
+
+def risk_limits() -> dict:
+    """风控护栏上限（0=不限制）：
+    GM_RISK_MAX_QTY 单笔最大股数 / GM_RISK_MAX_ORDERS 当日最大下单次数 /
+    GM_RISK_MAX_CODES 当日最多操作只数。
+    """
+    out = {}
+    for key, name in (("GM_RISK_MAX_QTY", "max_qty"),
+                      ("GM_RISK_MAX_ORDERS", "max_orders"),
+                      ("GM_RISK_MAX_CODES", "max_codes")):
+        raw = _env(key).strip()
+        try:
+            out[name] = int(raw) if raw else 0
+        except ValueError:
+            out[name] = 0
+    return out

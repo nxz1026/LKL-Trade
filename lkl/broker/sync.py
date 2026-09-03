@@ -1,14 +1,18 @@
-"""lkl sim sync: 真实持仓 -> holdings.json（供 DB 对账 position 表）。"""
+"""lkl sim sync: 真实持仓 -> holdings.json（供 DB 对账 position 表）。
+
+v2 契约：行含 code(无前缀)/symbol/volume/available/cost/price(=最新价)/fpnl。
+"""
 from __future__ import annotations
 
 from lkl.broker import client, holdings, queries, remote
 
 
 def _row(p) -> dict:
-    """PositionInfo → holdings 行（code 去交易所前缀，真实仓字段齐全）。"""
+    """PositionInfo → holdings 行（code 无交易所前缀；price=最新参考价）。"""
     return {"code": p.symbol.rsplit(".", 1)[-1], "symbol": p.symbol,
             "volume": p.volume, "available": p.available, "cost": p.cost,
-            "vwap": p.vwap, "last_price": p.last_price, "fpnl": p.fpnl}
+            "price": p.last_price, "vwap": p.vwap,
+            "last_price": p.last_price, "fpnl": p.fpnl}
 
 
 def snapshot() -> int:
