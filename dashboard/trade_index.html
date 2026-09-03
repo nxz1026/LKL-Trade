@@ -23,6 +23,7 @@ td,th{border:1px solid #e3e5e8;padding:4px 8px;font-size:.9rem;text-align:left}
   <div class="tab" data-v="sys" onclick="show('sys')">系统运行状态</div>
 </div>
 <p id="stat" class="sub">加载中…</p>
+<button onclick="manual()" style="font-size:.8rem">手动刷新</button>
 
 <section id="trade" class="screen on">
   <h2>账户</h2><div class="card" id="account">-</div>
@@ -45,13 +46,11 @@ function show(v){
 }
 async function load(){
   const s=await (await fetch('/api/state')).json();
-  $('stat').textContent=`for_date ${s.for_date} · 交换目录 ${s.exchange_dir} · 每5s刷新`;
   renderAccount(s.account); renderTable('decisions',s.decisions,['action','code','reason','window']);
   renderResults(s.results); renderOrders(s.orders);
 }
 async function loadSys(){
   const s=await (await fetch('/api/sys')).json();
-  $('stat').textContent=`${s.now} · ${s.phase} · ${s.exchange_dir} · 每5s刷新`;
   const term=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${s.terminal}</span> `+
     `<span class="pill ${s.account_ready?'o':'x'}">账户 ${s.account_ready?'已连':'未连接'}</span>`;
   $('env').innerHTML=`<div class="cash"><b>端点 ${s.endpoint}</b><b>${term}</b></div>`;
@@ -91,6 +90,18 @@ function renderResults(rows){
 }
 const num=x=>x==null?'—':Number(x).toFixed(2);
 const val=x=>x==null?'—':x;
-load(); loadSys(); setInterval(()=>{load();loadSys();},5000);
+var _timer=null, _auto=true;
+function tick(){
+  load(); loadSys();
+  clearTimeout(_timer);
+  fetch('/api/meta').then(r=>r.json()).then(m=>{
+    var badge=document.getElementById('stat');
+    badge.textContent=(m.window?'文件读写窗口活跃 · 每'+m.refresh+'s 自动刷新'
+        :'非读写时段 · 自动刷新已暂停(点手动刷新)');
+    if(m.refresh>0){ _timer=setTimeout(tick, m.refresh*1000); }
+  }).catch(()=>{});
+}
+function manual(){ tick(); }
+tick();
 </script>
 </body></html>

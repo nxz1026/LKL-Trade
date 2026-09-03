@@ -1,4 +1,3 @@
-"""trade 看板 HTTP 服务（stdlib http.server 零依赖）：页面 + /api/state。"""
 from __future__ import annotations
 
 import json
@@ -7,9 +6,9 @@ from pathlib import Path
 
 from dashboard.trade_state import state
 from dashboard.sys_state import state as sys_state
+from lkl.broker import schedule, session
 
 _HTML = Path(__file__).with_name("trade_index.html")
-
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
@@ -21,6 +20,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sys":
             body = json.dumps(sys_state(), ensure_ascii=False, default=str).encode("utf-8")
             self._send(200, "application/json", body)
+        elif self.path == "/api/meta":
+            now = session.now()
+            m = {"now": now.isoformat(timespec="seconds"),
+                 "refresh": schedule.refresh_sec(now),
+                 "window": schedule.in_read_window(now)}
+            self._send(200, "application/json", json.dumps(m).encode("utf-8"))
         else:
             self._send(404, "text/plain", b"not found")
 
@@ -34,9 +39,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args) -> None:
         pass  # 静默访问日志
 
-
 def run(argv: list[str]) -> int:
-    """lkl dash [port=8200]：本地看板 127.0.0.1。"""
     port = int(argv[0]) if argv and argv[0].isdigit() else 8200
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"trade 看板: http://127.0.0.1:{port}  Ctrl+C 退出")
