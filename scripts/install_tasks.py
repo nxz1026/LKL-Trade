@@ -46,6 +46,7 @@ function NewTask($name,$exe,$arg,$delay,$rc){{
 }}
 NewTask 'LKLGoldminer' $g '' $null $false
 NewTask 'LKLTradeSup' $py '-m lkl.main sup' 'PT1M' $true
+NewTask 'LKLDash' $py '-m lkl.main dash' 'PT1M' $false
 'OK'"""
 
 
@@ -57,11 +58,11 @@ def install() -> None:
             print("注册需要管理员权限（UAC）。请以管理员运行：")
             print(f"  python \"{REPO/Path('scripts/install_tasks.py')}\" install")
         raise
-    print("已注册：LKLGoldminer + LKLTradeSup（自启）")
+    print("已注册：LKLGoldminer + LKLTradeSup + LKLDash（自启）")
 
 
 def uninstall() -> None:
-    _ps("Unregister-ScheduledTask -TaskName LKLGoldminer,LKLTradeSup -Confirm:$false -ErrorAction SilentlyContinue")
+    _ps("Unregister-ScheduledTask -TaskName LKLGoldminer,LKLTradeSup,LKLDash -Confirm:$false -ErrorAction SilentlyContinue")
     print("已卸载")
 
 
