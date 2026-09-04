@@ -20,7 +20,10 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
 - **JSON 契约**（`~/trade/`，schema=2，见 `docs/exchange-contract.v2.md`）：
   - `decisions.json`（策略→本机）：当日 `for_date` + `actions[]`（每条 code/action/exec/volume/reason/window；exec 是执行分发依据：OPEN_POS↔BUY、CLOSE_ALL↔SELL，缺失按 action 兜底）
   - `results.json`（本机→策略/DB）：当日执行明细，DB 消费 `action/code/ok/price/shares/order_id/reason`
-    （另带 status/status_label/filled/remaining/note/traded_at 供看板与审计，DB 可忽略）
+    （另带 status/status_label/filled/remaining/note/traded_at 供看板与审计，DB 可忽略）。
+    **status 语义（v2 契约）**：回报自带显式 `status`，消费端优先取该值，不得用 reason 含字启发式
+    猜状态——`REJECTED`=门禁/券商拒（**可重试**，非终态），`CANCELLED`=撤单（终态），
+    `EXCLUDED`=决策排除（历史/人工，不再产生）。
   - `holdings.json`（`lkl sim sync` 刷新）：真实持仓快照（供策略端对账）
   - `manual_orders.json`（`lkl sim sync` 顺带回捞）：终端**当日全部委托**（含手动单与 LKL 自动单），
     行结构同 results，带 `source: manual|decision`（order_id 不在当日 results = manual）与
@@ -118,6 +121,8 @@ docs/        exchange-contract.v2.md(字段契约) · TESTING.md(测试步骤) �
 
 - 默认 **dry（演练/只读）**：`lkl trade govern arm` 才允许自动下单；`halt` 紧急停止即时且持久。
 - **只有已成交(FILLED)** 进 `executed.json` 防重账本；拒单/部分成交可自动重试（≤3 次留人工）。
+- **REJECTED（含门禁拒，如盘外「非交易日或不在盘中时段」）与 EXCLUDED 是两回事**：REJECTED 可重试、
+  留档待开市再试；EXCLUDED 是历史/人工语义、不再重试。结果文件里的 `status` 字段是唯一权威，别猜。
 - 单执行器进程锁；先记意图(pending.json)再下单、重启对账，防崩溃重复提交。
 - 风控护栏（`GM_RISK_*`）在订单前拦截；对账不符/风控拦截/急停/调度异常进 `alerts.jsonl` 分级告警。
 - 测试与双端联调：见 `docs/TESTING.md`（分级步骤）与 `docs/DB-CONFIRM.md`（DB 需拍板项）。
