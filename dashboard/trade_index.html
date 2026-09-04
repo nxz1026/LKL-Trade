@@ -64,7 +64,7 @@ async function loadSys(){
     `<span class="pill ${s.account_ready?'o':'x'}">账户 ${s.account_ready?'已连':'未连接'}</span>`;
   $('env').innerHTML=`<div class="cash"><b>端点 ${esc(s.endpoint)}</b><b>${term}</b>`+
     `<b>${s.trading_day?'交易日':'非交易日'}</b><b>${esc(s.phase)}</b></div>`+
-    `<div class="sub">下一可交易 ${esc(s.next_open||'休市/今日无')} · 进程脉冲 ${esc(hb.last_success||'—')}</div>`;
+    `<div class="sub">下一可交易 ${esc(s.next_open||'休市/今日无')} · 下次拉取 ${esc(s.next_pull||'暂无')} · 进程脉冲 ${esc(hb.last_success||'—')}</div>`;
   renderGovern(s);
   const keys=['exists','size','mtime','today','schema','for_date','parse'];
   const th='<tr><th>文件</th>'+keys.map(k=>`<th>${esc(k)}</th>`).join('')+'</tr>';
@@ -84,7 +84,8 @@ function renderBanner(s,hb){
   const cred=s.creds_ok===false?'<span class="pill x">凭证缺失</span>':'';
   const term2=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${esc(s.terminal)}</span>`;
   const bound=s.bound_account?`· 绑定账户 ${esc(s.bound_account)}`:'';
-  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} · 进程脉冲 ${esc(hb.last_success||'—')}`+` · 文件活动 ${esc(s.last_file_activity||'—')}`;
+  const pull=s.next_pull?`<span class="pill o">下次拉取 ${esc(s.next_pull).slice(11,19)}</span>`:('<span class="pill m">暂无拉取窗口</span>');
+  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} ${pull}`+` · 进程脉冲 ${esc(hb.last_success||'—')}`+` · 文件活动 ${esc(s.last_file_activity||'—')}`;
 }
 function renderGovern(s){
   const el=$('govern'); if(!el)return;

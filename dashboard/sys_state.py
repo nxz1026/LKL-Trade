@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from lkl.broker import config, fileio, gate, governor, session
+from lkl.broker import config, fileio, gate, governor, schedule, session
 
 _FILES = ("decisions", "results", "holdings")
 _STALE_MIN = 3   # 心跳超过该分钟未更新 = 调度疑似停止
@@ -80,6 +80,9 @@ def state() -> dict:
         "trading_day": session.is_trading_day(now),
         "next_open": (session.next_open(now).isoformat(timespec="seconds")
                        if session.next_open(now) else None),
+        "next_pull": (schedule.next_pull(now).isoformat(timespec="seconds")
+                       if schedule.next_pull(now) else None),
+        "pull_cycle_sec": schedule.PULL_CYCLE_SEC,
         "endpoint": config.endpoint(),
         "exchange_dir": str(fileio.directory()),
         "terminal": "在线" if gate.up() else "离线",
