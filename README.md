@@ -69,7 +69,7 @@ uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编�
 
 ```bash
 lkl sim                  # 账户资金/持仓
-lkl sim sync             # 真实持仓 → holdings.json
+lkl sim sync             # 真实持仓 → holdings.json；顺带回捞终端当日全部委托(含手动单) → manual_orders.json
 lkl trade check          # 三文件日期一致性 + 决策成交覆盖(缺/损返回非0)
 lkl trade [YYYY-MM-DD]   # 执行当日 decisions → results.json（先拉远、绑定文件、锁、防重）
 lkl trade watch          # 循环盯盘（受交易日/盘中门禁约束，盘外不下单）
