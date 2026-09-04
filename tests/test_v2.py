@@ -39,6 +39,25 @@ def test_results_row_v2_fields(tmp_path, monkeypatch):
     assert row["order_id"] == "oid-1"
 
 
+def test_exchange_prices_rounded_to_2(tmp_path, monkeypatch):
+    """交换文件价格收敛 2 位小数（A股最小变动 0.01），DB 对账不遇长尾。"""
+    import json
+    from lkl.broker import config, fileio
+    monkeypatch.setitem(config._DEFAULTS, "TRADE_DIR", str(tmp_path))
+    p = fileio.write("holdings", {
+        "schema": 1, "for_date": "2026-09-04", "account": "a1",
+        "holdings": [{"code": "601988", "symbol": "SHSE.601988",
+                      "volume": 100, "available": 100, "cost": 6.7345,
+                      "price": 6.7088, "vwap": 6.7300,
+                      "last_price": 6.7088, "fpnl": -2.57}]})
+    body = json.loads(p.read_text(encoding="utf-8"))
+    row = body["holdings"][0]
+    assert row["cost"] == 6.73
+    assert row["price"] == 6.71 and row["last_price"] == 6.71
+    assert row["vwap"] == 6.73
+    assert body["schema"] == 1 and body["account"] == "a1"
+
+
 def test_remote_cd_rejects_escape(tmp_path, monkeypatch):
     """v2 受限目录：.. 与绝对路径一律拒绝，防越界到他人目录/根。"""
     from lkl.broker import config, remote

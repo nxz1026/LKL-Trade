@@ -45,12 +45,28 @@ def read_path(p: Path | None) -> dict:
     return json.loads(p.read_text(encoding="utf-8")) if p else {}
 
 
+def _p2(v):
+    """交换文件数值收缩：价格一律保留 2 位小数（A股最小变动 0.01）。
+
+    递归收敛 dict/list 中所有 float；int/bool/str/None 原样 —— 决策 volume
+    取整不在此列，价格字段（results price/avg_price、holdings cost/price/
+    vwap/last_price/fpnl）全部 2 位，DB 对账与展示一致。
+    """
+    if isinstance(v, float):
+        return round(v, 2)
+    if isinstance(v, dict):
+        return {k: _p2(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_p2(x) for x in v]
+    return v
+
+
 def write(kind: str, payload: dict) -> Path:
-    """写 {kind}_{时间戳}.json（原子，每份唯一，历史即版本）。"""
+    """写 {kind}_{时间戳}.json（原子，每份唯一，历史即版本）；价格收敛 2 位。"""
     d = directory()
     d.mkdir(parents=True, exist_ok=True)
     p = d / f"{kind}_{_stamp()}.json"
-    atomic_write(p, json.dumps(payload, ensure_ascii=False, indent=2))
+    atomic_write(p, json.dumps(_p2(payload), ensure_ascii=False, indent=2))
     return p
 
 
