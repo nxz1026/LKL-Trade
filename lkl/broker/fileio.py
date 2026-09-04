@@ -45,6 +45,11 @@ def read_path(p: Path | None) -> dict:
     return json.loads(p.read_text(encoding="utf-8")) if p else {}
 
 
+def remove(name: str) -> None:
+    """删除交换目录内一份文件（清理远端已消费决策的本地同名残留）。"""
+    (directory() / name).unlink()
+
+
 def _p2(v):
     """交换文件数值收缩：价格一律保留 2 位小数（A股最小变动 0.01）。
 

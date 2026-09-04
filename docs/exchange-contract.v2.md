@@ -7,24 +7,25 @@
 ## 1. decisions（DB → 交易端，只读后自删）
 
 ```json
-{ "schema": 1, "for_date": "2026-09-03", "generated_at": "…+08:00",
+{ "schema": 2, "for_date": "2026-09-03", "generated_at": "…+08:00",
   "actions": [ {"action": "SELL", "code": "601988", "reason": "退潮期清仓建议",
-                "volume": 100, "window": "NONE"} ] }
+                "exec": "CLOSE_ALL", "volume": 100, "window": "NONE"} ] }
 ```
-- `code` 6位无前缀；`action ∈ BUY|SELL`；`volume`：BUY=0 / SELL=建议股数。
-- `window`（DB 已拍板：**NONE/空 = 本次不交易**）：
-  | 值 | 语义 | 交易端行为 |
+- `code` 6位无前缀；`action ∈ BUY|SELL`；`volume`：BUY=建议股数 / SELL=建议股数。
+- **`exec`（契约 v2，执行语义，交易端分发的唯一依据）**：
+  | 值 | 语义 | 仅配 action |
   |---|---|---|
-  | `ANY`/`DAY` | 全天不限 | 放行，盘内下单 |
-  | `""`/漏填 | 同 NONE：本次不交易 | EXCLUDED，不进单 |
-  | `MORNING` | 上午盘执行 | 仅 9:30–11:30 放行，过期 EXCLUDED |
-  | `AFTERNOON` | 下午盘执行 | 仅 13:00–15:00 放行，过期 EXCLUDED |
-  | `NONE` | **本次不交易**（建议仅作记录/观察，勿下单） | **EXCLUDED：不进单、不重试、绝不下单** |
-  | 未识别值 | 保守同 NONE | EXCLUDED 不进单 |
-  **结论：`NONE`/`""`/未识别 = “本次不交易”；只有显式 `ANY/DAY/MORNING/AFTERNOON` 才会下单。**
-- 交易端读取（文件名倒序取当 for_date 最新）→ 执行 → 结果写 results → **先归档本地
-  `archive/<日期>/`（副本落盘）→ 再删除远端该 decisions**（`for_date==day` 守卫，绝不误删
-  新一天投递）。DB 侧只投递、不需要对 decisions 做任何删除/消费标记。
+  | `OPEN_POS` | 开仓买入（volume=建议股数，交易端可自定） | `BUY` |
+  | `CLOSE_ALL` | 清仓该 code 全部持仓（volume=当前持仓数，执行时忽略） | `SELL` |
+  **exec 缺失/漏填（schema:1 旧文件兼容）**：交易端按 action 兜底 —— BUY→`OPEN_POS`、
+  SELL→`CLOSE_ALL`，**不崩溃、不拒单**。
+- `window`（契约 v2 起**仅为展示标签，不参与执行判断**）：MORNING/AFTERNOON/NONE 等
+  原买入口径不再有任何执行语义；SELL 清仓与 window=NONE 并存是正常组合，照样下单。
+- 交易端读取：一次拉取远端**全部** decisions，按文件名时间**升序**（旧→新）逐份执行
+  —— 同一 code 多份跨 action 决策严格按投递顺序处理（先 BUY 后 SELL，绝不倒序）。
+  每份执行完 → 结果并入 results → **先归档本地 `archive/<日期>/`（副本落盘）→ 再删除
+  远端该 decisions**（`for_date==day` 守卫，绝不误删新一天投递；文件逐一删，不残留积压）。
+  DB 侧只投递、不需要对 decisions 做任何删除/消费标记。
 
 ## 2. results（交易端 → DB，每次执行写新时间戳文件）
 

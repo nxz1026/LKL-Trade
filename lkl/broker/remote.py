@@ -65,6 +65,13 @@ def newest(kind: str) -> str:
     return ns[-1] if ns else ""
 
 
+def names(kind: str) -> list:
+    """远端该 kind 全部文件名（升序）；本地禁用时返回空列表。"""
+    if not enabled():
+        return []
+    return _names(kind)
+
+
 def rm(name: str) -> None:
     if enabled() and name:
         _sftp(_cd() + f"rm {name}\n")
@@ -78,6 +85,19 @@ def pull(kind: str) -> None:
     if not name:
         return
     _sftp(_cd() + f"get {name} {fileio.directory() / name}\n")
+
+
+def pull_all(kind: str) -> list:
+    """把远端该 kind 全部文件拉到本地；返回已拉取的本地 Path 列表（升序）。"""
+    if not enabled():
+        return []
+    local_dir = fileio.directory()
+    local_dir.mkdir(parents=True, exist_ok=True)
+    pulled = []
+    for name in _names(kind):
+        _sftp(_cd() + f"get {name} {local_dir / name}\n")
+        pulled.append(local_dir / name)
+    return pulled
 
 
 def push(kind: str) -> None:

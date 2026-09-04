@@ -17,8 +17,8 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
   import 消费(更新 position/signal) ◀─同步──
 ```
 
-- **JSON 契约**（`~/trade/`，schema=1）：
-  - `decisions.json`（策略→本机）：当日 `for_date` + `actions[]`（每条 code/action/volume/reason/window）
+- **JSON 契约**（`~/trade/`，schema=2，见 `docs/exchange-contract.v2.md`）：
+  - `decisions.json`（策略→本机）：当日 `for_date` + `actions[]`（每条 code/action/exec/volume/reason/window；exec 是执行分发依据：OPEN_POS↔BUY、CLOSE_ALL↔SELL，缺失按 action 兜底）
   - `results.json`（本机→策略/DB）：当日执行明细，DB 消费 `action/code/ok/price/shares/order_id/reason`
     （另带 status/status_label/filled/remaining/note/traded_at 供看板与审计，DB 可忽略）
   - `holdings.json`（`lkl sim sync` 刷新）：真实持仓快照（供策略端对账）
@@ -28,9 +28,9 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
 - **执行日一致性**：所有业务日期一律 **Asia/Shanghai**。
 - **交易时段**：盘内(9:30-11:30/13:00-15:00)自动执行；周末与休市日（`GM_HOLIDAYS`）不开市；
   任何 `trade / watch / sup` 入口统一在订单层做交易时段门禁（盘外拒单，开市后再试）。
-- **window**（DB 已拍板：`NONE`/空/未识别 = 本次不交易）：此类动作**明确排除、不进单**，避免「报告说不交易执行端却买」；只有显式 `ANY/DAY/MORNING/AFTERNOON` 才下单。
+- **window**（契约 v2 起仅为展示标签，不参与执行判断）：MORNING/AFTERNOON/NONE 等原买入口径不再有执行语义；SELL 清仓与 window=NONE 并存是正常组合，照样下单。
 - **调度窗口**：盘内自动执行当日决策；工作日 12:01-12:59 与 17:30-18:01 每 1 分钟轮询同步决策。
-- **文件命名**：`{kind}_YYYYMMDD_HHMMSS.json` 秒级时间戳、Asia/Shanghai(+8)（v2 契约，日内多版本不覆盖）；读取取当日最新，完成后只归档处理的那一份到 `archive/<日期>/`。
+- **文件命名**：`{kind}_YYYYMMDD_HHMMSS.json` 秒级时间戳、Asia/Shanghai(+8)（v2 契约，日内多版本不覆盖）；读取一次拉取远端**全部** decisions，按文件名时间**升序**（旧→新）逐份执行——同一 code 多份跨 action 决策严格按投递顺序处理（先 BUY 后 SELL，绝不倒序）；每份完成后归档本地 + 删远端（for_date 守卫），不留积压。
 
 ## 安装
 

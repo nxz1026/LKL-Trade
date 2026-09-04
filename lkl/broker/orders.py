@@ -2,9 +2,10 @@
 
 - 状态语义统一到 `OrderStatus`（消除自造布尔/中文状态词）；返回成交数量、
   均价、剩余数量与拒因（对应审查 P0-02）。
-- SELL 业务契约：`volume>0` = 指定数量（入口校验可用持仓，不足即 NO_POSITION 不下单）；
-  `volume=0` = 清仓（按可用量）。冲突停止，绝不猜测（P1-01）。
-- 门禁：window 语义（P1-02，EXCLUDED=终态）+ 交易日/盘中（P1-03/04，REJECTED=可重试）。
+- SELL 业务契约（契约 v2）：exec=CLOSE_ALL → 按实时可用持仓清仓（volume 只是建议，
+  以当前可用量为准）；否则 `volume>0` = 指定数量（可用不足即 NO_POSITION 不下单）。
+  冲突停止，绝不猜测（P1-01）。
+- 门禁：交易日/盘中（P1-03/04，REJECTED=可重试）。（window 自契约 v2 起不参与执行。）
 """
 from __future__ import annotations
 
@@ -38,11 +39,13 @@ def _qty(sig: Signal) -> tuple[int, str]:
     for p in queries.positions():
         if p.symbol == gm:
             avail = p.available
+    if sig.exec_ == "CLOSE_ALL":
+        return avail, ""               # 清仓全量：volume 只是建议，以实时可用为准
     if sig.volume > 0:
         if avail < sig.volume:
             return 0, f"SELL指令{sig.volume} > 持仓可用{avail}, 拒绝"
         return sig.volume, ""
-    return avail, ""  # volume=0 → 清仓
+    return avail, ""  # 未标 exec 的旧 SELL，volume=0 → 清仓
 
 
 def _status_of(o) -> OrderStatus:
@@ -64,15 +67,12 @@ def _as_result(o) -> ExecResult:
 
 def submit(sig: Signal, volume: int = 0) -> ExecResult:
     """下市价单；返回含成交明细的权威状态。"""
-    wf = policy.window_verdict(sig)
-    if wf:
-        return wf
     mg = policy.market_verdict(sig)
     if mg:
         return mg
     client.connect()
     side, effect = _EFFECT[sig.action]
-    shares = volume or sig.volume
+    shares = 0 if sig.exec_ == "CLOSE_ALL" else (volume or sig.volume)
     if shares <= 0:
         qty, err = _qty(sig)
         if err:
