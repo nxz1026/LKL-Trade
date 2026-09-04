@@ -1,4 +1,4 @@
-"""tradeops 故障注入测试：拒单不记账、成交归档、window 排除、并发锁、崩溃一致性、部分成交。"""
+"""tradeops 故障注入测试：拒单不记账、成交归档、window 展示标签（不拦单）、并发锁、崩溃一致性、部分成交。"""
 from __future__ import annotations
 
 import pytest
@@ -103,6 +103,7 @@ def test_close_all_season_sell_executes(env):
 
     2026-09-04 事故回归：window=NONE 曾被误判「无明确执行语义，拒绝下单」→ EXCLUDED
     拒掉 601988 清仓。契约 v2 起 window 只是展示标签，执行只看 exec。
+    本测试即 DB-CONFIRM.md #1 拍板的验收用例。
     """
     from lkl.broker import exchange, ledger, tradeops
     _put_decision(env, [{"code": "601988", "action": "SELL", "window": "NONE",

@@ -1,12 +1,12 @@
 # 双端联调前：DB 端需确认清单（交易端 LKL-Trade）
 
 主契约见 `docs/exchange-contract.v2.md`。以下是我方已按 v2 实现、但含**交易端假设**、
-必须 DB 端拍板的点。**#1(window=NONE) 与 #4(decisions 生命周期) 已拍板 ✅（见下表）；
+必须 DB 端拍板的点。**#1(window 语义) 与 #4(decisions 生命周期) 已拍板 ✅（见下表）；
 其余为语义澄清建议，非阻塞。**
 
 | # | 点 | 交易端现状 | 需 DB 确认 |
 |---|---|---|---|
-| 1 | **window=NONE 语义** ✅ | **已拍板 A：NONE/空/未识别 = 本次不交易** → EXCLUDED：不进单、不重试 | 交易端无需改代码；DB 生成端按契约表发值：要下单务必显式 `ANY/DAY/MORNING/AFTERNOON` |
+| 1 | **window 执行语义（v2）** ✅ | **已拍板（v2 起）：window 仅为展示标签，不参与执行判断**；执行唯一依据 `exec`（OPEN_POS↔BUY / CLOSE_ALL↔SELL，缺失按 action 兜底）。SELL 清仓与 window=NONE 并存是正常组合，照样下单（回归测试 `test_close_all_season_sell_executes`）；不再产生 EXCLUDED | DB 生成端无需管 window 取值：开仓发 `BUY+OPEN_POS`、清仓发 `SELL+CLOSE_ALL`；window 随意（MORNING/AFTERNOON/NONE…），交易端不据此拦单 |
 | 2 | results 行字段 | 消费字段 `action/code/ok/price/shares/order_id/reason`；另带 `status/status_label/note/traded_at/confirmed/ref` | 附加字段 DB 忽略即可？`reason` 空时我方回填决策原因（兼容 SELL 成功“断板卖出”）可否接受 |
 | 3 | SELL 未成交 | `ok:false`，保留自动重试（当日 ≤3 次），recon 标“待处理” | DB 语义=保持持仓 OPEN、**次日发新 for_date** 重试？（勿重发同日——我方 ref 含日期） |
 | 4 | decisions 删/保留归属 ✅ | **已拍板：先归档本地 `archive/<日期>/` → 再删远端**（`for_date==day` 守卫防误删新一天投递；`GM_KEEP_REMOTE=1` 才保留远端，作审计追溯） | DB 侧**只投递、不删不标记**；远端 decisions 生命周期归交易端。建议 DB 消费依据用 `results/holdings`（带 `ref`）；若仍直接消费 decisions，请按 `for_date|code|action` 幂等（同一文件重复读无副作用，删的是远端副本） |

@@ -6,8 +6,8 @@
 - 只有 ``FILLED`` 是「已确认成交」——唯一允许写入防重账本 executed.json。
 - ``REJECTED / NO_POSITION / PARTIAL / SUBMITTED / NOT_FOUND`` 都可自动重试，
   不入防重账本；部分成交的剩余数量必须保留，由执行层决定是否续下。
-- ``CANCELLED`` 人工终结；``EXCLUDED`` 决策语义排除（如 window）→ 不再自动重试，
-  但两者都不会被视为成交防重。
+- ``CANCELLED`` 人工终结；``EXCLUDED`` 保留状态位（历史语义；window 自契约 v2 起不再
+  产生 EXCLUDED，仅展示标签）→ 不再自动重试，但两者都不会被视为成交防重。
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class OrderStatus(str, Enum):
     REJECTED = "REJECTED"         # 被拒（可重试）
     NO_POSITION = "NO_POSITION"   # 无持仓/可用不足（可重试）
     CANCELLED = "CANCELLED"       # 撤单/人工终（终态，不视为成交）
-    EXCLUDED = "EXCLUDED"         # 决策语义排除（如 window），不成交且不再重试
+    EXCLUDED = "EXCLUDED"         # 决策语义排除（历史/人工），不成交且不再重试
     NOT_FOUND = "NOT_FOUND"       # 查询不到（可重试）
     UNKNOWN = "UNKNOWN"           # 兜底
 
