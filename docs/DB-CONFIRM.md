@@ -1,7 +1,7 @@
 # 双端联调前：DB 端需确认清单（交易端 LKL-Trade）
 
 主契约见 `docs/exchange-contract.v2.md`。以下是我方已按 v2 实现、但含**交易端假设**、
-必须 DB 端拍板的点。**#1(window 语义) 与 #4(decisions 生命周期) 已拍板 ✅（见下表）；
+必须 DB 端拍板的点。**#1(window 语义)、#4(decisions 生命周期) 与 #10(回报 status 语义) 已拍板 ✅（见下表）；
 其余为语义澄清建议，非阻塞。**
 
 | # | 点 | 交易端现状 | 需 DB 确认 |
@@ -15,6 +15,7 @@
 | 7 | 多用户归属 | results/holdings 写各自 user1/user2 目录，行内无 account | DB 按目录区分账户即可？还是需要文件/行内带 account_id |
 | 8 | 文件名/时区 | 秒级 `YYYYMMDD_HHMMSS.json` + Asia/Shanghai(+8) | 确认服务器侧按 +8 判读、不按 UTC 错日 |
 | 9 | 拒单重试上限 | 当日 3 次后停止自动，留待人工（`lkl trade resolve`） | DB 的“T+1 重试”靠次日 decisions 实现？当日 ≤3 次窗口内 DB 无需介入？ |
+| 10 | **回报 status 语义（v2）** ✅ | results 行自带显式 `status`；消费端**优先取显式值**，禁止用 reason 含字启发式猜状态（仅 schema1 旧格式回落 reason 启发式）。三态口径：`REJECTED`=门禁/券商拒（**可重试**，非终态，留档待开市/次日再试，仓位不动）；`CANCELLED`=撤单（终态）；`EXCLUDED`=决策排除（历史/人工，v2 起不再产生） | **已拍板（2026-09-04 联调）**：DB `sell_fail` 改为显式 status 优先（`lkl/trade/apply.py`，commit `afa0868`，测试 `test_sell_rejected_explicit_status_wins`）。trade_event 只存 CANCELLED/REJECTED 两态，**不新增独立 EXCLUDED 存储态**——历史 4 份 EXCLUDED 当时按 reason 回落记为 REJECTED，v2 起不再产生，加第三态收益为 0 不动 schema/面板/测试 |
 
 ## 联调验收口径（第 8 节）
 
