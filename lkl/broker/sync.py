@@ -4,7 +4,7 @@ v2 契约：行含 code(无前缀)/symbol/volume/available/cost/price(=最新价
 """
 from __future__ import annotations
 
-from lkl.broker import client, holdings, queries, remote
+from lkl.broker import client, holdings, manual_orders, queries, remote
 
 
 def _row(p) -> dict:
@@ -16,9 +16,15 @@ def _row(p) -> dict:
 
 
 def snapshot() -> int:
-    """连终端，读真实仓并写 holdings.json；返回条数。"""
+    """连终端，读真实仓并写 holdings.json；返回条数。同时回捞手动委托。"""
     client.connect()
     rows = [_row(p) for p in queries.positions()]
     holdings.dump(rows)
     remote.push("holdings")
+    n_orders = 0
+    try:
+        n_orders = manual_orders.fetch()
+    except Exception as e:
+        # 手动单回捞是 best-effort，不阻断持仓快照
+        pass
     return len(rows)

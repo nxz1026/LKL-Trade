@@ -66,6 +66,34 @@
 - `code` 无前缀；`symbol` 带前缀；`price`=`last_price` 最新参考价（兼容旧 `vwap`）。
 - 保留字段：`vwap`, `last_price`。
 
+## 4. manual_orders（交易端 → DB，增量回捞）
+
+```json
+{ "schema": 1, "for_date": "2026-09-03", "generated_at": "…+08:00",
+  "orders": [ … ] }
+```
+
+每份 orders[] 行（**DB 消费字段**）同 results：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `action` | str | BUY / SELL |
+| `code` | str | 6 位，无前缀 |
+| `ok` | bool | **已成交**（`status == FILLED`）|
+| `price` | number | 委托价/均价 |
+| `shares` | number | 已成交数量 |
+| `order_id` | str | 券商委托号 |
+| `reason` | str | 拒因；无则空 |
+| `source` | str | `"manual"` 手动单 / `"decision"` LKL 自动单（order_id 在当日 results 中）|
+| `ref` | str | `{for_date}|{code}|{action}|{order_id}` —— order 级幂等键 |
+
+**DB 忽略的保留字段**：`status`/`status_label`/`confirmed`, `filled`, `remaining`,
+`avg_price`, `note`(手动终端操作/LKL自动单), `traded_at`。
+
+> 增量幂等：仅当日委托集合（`order_id × status`）较上次 manifest 有新增或状态变化
+> 时才写新文件并上传；无变化返回 0 不写不传。DB 按 `for_date` 聚合当日最新一份即可。
+> 本地 `lkl sim sync`（盘中分钟轮询 + 工作日晚间）均会触发回捞。
+
 ## 6. 幂等与归档
 
 - 交易端「写完 results/holdings 新文件即可」，db 侧归档移走；不做重复写。

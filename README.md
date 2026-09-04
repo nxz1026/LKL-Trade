@@ -22,6 +22,10 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
   - `results.json`（本机→策略/DB）：当日执行明细，DB 消费 `action/code/ok/price/shares/order_id/reason`
     （另带 status/status_label/filled/remaining/note/traded_at 供看板与审计，DB 可忽略）
   - `holdings.json`（`lkl sim sync` 刷新）：真实持仓快照（供策略端对账）
+  - `manual_orders.json`（`lkl sim sync` 顺带回捞）：终端**当日全部委托**（含手动单与 LKL 自动单），
+    行结构同 results，带 `source: manual|decision`（order_id 不在当日 results = manual）与
+    order 级 `ref`（`{for_date}|{code}|{action}|{order_id}`，幂等键）；增量回捞，仅当委托
+    集合（order_id×status）有新增/状态变化才写新文件并上传，DB 对账手动操作消费 `source=manual` 行
   - `executed.json`（本机）：防重账本，**只记已确认成交**（防 results 丢后重复下单）
   - `pending.json`（本机）：下单意图日志（防崩溃在「已下单-未记账」窗口重复提交）
   - `heartbeat.json`：本地进程脉冲（本地看板判 sup 存活；不进 v2 契约、不上传远端）
