@@ -7,9 +7,10 @@ from datetime import datetime
 import pytest
 
 
-def test_filename_stamp_is_second_level_shanghai():
+def test_filename_stamp_is_second_level_shanghai(tmp_path, monkeypatch):
     """文件名 = {kind}_YYYYMMDD_HHMMSS.json（秒级，+8 非 UTC）。"""
-    from lkl.broker import fileio, session
+    from lkl.broker import config, fileio, session
+    monkeypatch.setitem(config._DEFAULTS, "TRADE_DIR", str(tmp_path))
     name = fileio.write("results", {"x": 1}).name
     assert re.fullmatch(r"results_\d{8}_\d{6}\.json", name)
     stamp = re.match(r"[a-z]+_(\d{8}_\d{6})\.json", name).group(1)
