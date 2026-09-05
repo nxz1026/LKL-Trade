@@ -318,3 +318,34 @@ def test_exec_action_mismatch_rejected(env):
     _put_decision(env, [{"code": "601988", "action": "BUY", "exec": "FROB"}])
     with pytest.raises(exchange.DecisionValidationError):
         exchange.load_decisions()
+
+def test_duplicate_decision_crossday_archive_guard(env):
+    """跨日生成决策（文件名日期≠执行日）的归档守卫：归档入文件名日期目录，
+    重推同名副本仍命中「已消费」判定，绝不重发 results。
+
+    P0 候选复核：archive_one 曾按「今天」落盘而守卫按文件名日期查询——隔夜生成
+    （文件名 09-04、for_date 09-05）的决策归档到今天目录，守卫查昨天目录会漏判，
+    远端重推同名文件即重处理重发 results。本测试钉死该路径。
+    """
+    import json
+    from lkl.broker import exchange, fileio, tradeops
+    d = _today()
+    # 昨日生成（文件名 20260904_230000）、今日执行（payload for_date=今天）
+    name = "decisions_20260904_230000.json"
+    body = {"schema": 1, "for_date": d,
+            "actions": [{"code": "601988", "action": "BUY"}]}
+    p = fileio.directory() / name
+    p.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    ex = FakeExecutor(_filled())
+    assert tradeops.process_once(executor=ex) == 1
+    # 归档目录 = 文件名日期（09-04），与 consume/pack/is_archived 同一路径
+    assert (fileio.directory() / "archive" / "2026-09-04" / name).exists()
+    n_results = len(list(env.glob("results_*.json")))
+    # 远端重推同名副本 → 守卫命中 → 不重下、不新增 results
+    p.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    ex2 = FakeExecutor(_filled())
+    assert tradeops.process_once(executor=ex2) == 0
+    assert ex2.submits == []
+    assert len(list(env.glob("results_*.json"))) == n_results
+    assert not (fileio.directory() / name).exists()   # 残留副本被回收归档
+    assert len(exchange.load_results(d)) == 1          # 仅一轮 results

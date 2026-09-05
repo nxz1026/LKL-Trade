@@ -13,14 +13,17 @@ from __future__ import annotations
 import logging
 
 from lkl.broker import fileio, remote
+from lkl.broker.archiver import day_from_name
 
 log = logging.getLogger("lkl.cleanup")
 
 
 def _for_date_from_name(name: str) -> str:
-    """决策身份即文件名（{kind}_{YYYYMMDD_HHMMSS}.json）：从时间戳推导 for_date（ISO）。"""
-    ts = name.split("_")[1] if name.count("_") >= 2 else ""
-    return f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}" if len(ts) >= 8 else ""
+    """决策身份即文件名（{kind}_{YYYYMMDD_HHMMSS}.json）：从时间戳推导日期（ISO）。
+
+    与 archiver.day_from_name 同一推导（唯一实现），此处保留函数名供既有调用与测试。
+    """
+    return day_from_name(name)
 
 
 def remove_archived_name(name: str) -> int:

@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from lkl.broker import alerts, config, exchange, fileio, governor, intent, ledger, remote, resolve, session, trade_date
-from lkl.broker.archiver import archive_one
+from lkl.broker.archiver import archive_one, is_archived
 from lkl.broker.cleanup import remove_archived, remove_archived_name
 from lkl.broker.lock import single_executor
 from lkl.broker.orderstate import OrderStatus
@@ -153,10 +153,11 @@ def _consumed_archived(src) -> bool:
 
     防线：即使旧守卫（remove_archived 的 pull 落盘）或外部渠道把已归档决策的
     同名副本再次放进交换目录，也绝不重处理/重发 results（双份 results bug）。
+
+    判定走 archiver.is_archived：归档目录按文件名时间戳落盘（可先于 for_date
+    生成，如隔夜投递），查询与实际落盘路径永远一致，不再业务层自行推导。
     """
-    day = src.name.split("_")[1]
-    arch = fileio.directory() / "archive" / f"{day[:4]}-{day[4:6]}-{day[6:]}"
-    return (arch / src.name).exists()
+    return is_archived(src.name)
 
 
 def process_once(for_date: str | None = None, executor=None) -> int:

@@ -80,8 +80,9 @@ def remote_dir() -> str:
 
 
 def holidays() -> tuple:
-    """休市日集合（YYYY-MM-DD 逗号分隔），来自 GM_HOLIDAYS 或 .secrets/gm.env。"""
-    return tuple(x.strip() for x in _secret("GM_HOLIDAYS").split(",") if x.strip())
+    """休市日集合（YYYY-MM-DD 逗号分隔，中英文逗号均可），来自 GM_HOLIDAYS 或 .secrets/gm.env。"""
+    raw = _secret("GM_HOLIDAYS").replace("，", ",")
+    return tuple(x.strip() for x in raw.split(",") if x.strip())
 
 
 def risk_limits() -> dict:
