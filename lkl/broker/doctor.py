@@ -31,6 +31,13 @@ def quick() -> tuple[bool, list[str]]:
     return (not fails, fails)
 
 
+def table() -> dict:
+    """全部自检项 → JSON 可序列化 {ok, checks:[{name,ok,why}]}（看板 /api/doctor）。"""
+    checks = _all_checks()
+    return {"ok": all(ok for _, ok, _ in checks),
+            "checks": [{"name": n, "ok": ok, "why": why} for n, ok, why in checks]}
+
+
 def _all_checks():
     from lkl.broker import config, exchange, fileio, gate
 

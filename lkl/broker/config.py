@@ -85,18 +85,63 @@ def holidays() -> tuple:
     return tuple(x.strip() for x in raw.split(",") if x.strip())
 
 
+_RISK_KEYS = (("GM_RISK_MAX_QTY", "max_qty"),
+              ("GM_RISK_MAX_ORDERS", "max_orders"),
+              ("GM_RISK_MAX_CODES", "max_codes"))
+
+
 def risk_limits() -> dict:
     """风控护栏上限（0=不限制，无法表达「最多 0 单」，留空即不限）：
     GM_RISK_MAX_QTY 单笔最大股数 / GM_RISK_MAX_ORDERS 当日最大下单次数 /
     GM_RISK_MAX_CODES 当日最多操作只数。
+
+    读取走 _secret（env 优先、回退 .secrets/gm.env）：看板 set_risk_limits 写盘
+    gm.env 后即刻生效，无需重启/热更进程环境。
     """
     out = {}
-    for key, name in (("GM_RISK_MAX_QTY", "max_qty"),
-                      ("GM_RISK_MAX_ORDERS", "max_orders"),
-                      ("GM_RISK_MAX_CODES", "max_codes")):
-        raw = _env(key).strip()
+    for key, name in _RISK_KEYS:
+        raw = _secret(key).strip()
         try:
             out[name] = int(raw) if raw else 0
         except ValueError:
             out[name] = 0
     return out
+
+
+def set_risk_limits(values: dict) -> dict:
+    """看板可视化修改风控上限 → 写入 .secrets/gm.env（覆盖/追加键）。
+
+    仅接受 _RISK_KEYS 内的键，值为非负整数；写入失败（secrets 文件不可写）
+    抛 OSError，由调用方（HTTP 层）转 500。
+    """
+    cur = dict(risk_limits())
+    for key, name in _RISK_KEYS:
+        if name not in values:
+            continue
+        try:
+            v = int(values[name])
+        except (TypeError, ValueError):
+            raise ValueError(f"{name} 需为整数") from None
+        if v < 0:
+            raise ValueError(f"{name} 不能为负")
+        cur[name] = v
+    p = secrets_file()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    text = p.read_text(encoding="utf-8") if p.exists() else ""
+    lines = text.splitlines()
+    for key, name in _RISK_KEYS:
+        newline = f"{key}={cur[name]}"
+        found = False
+        for i, ln in enumerate(lines):
+            s = ln.strip()
+            if s.startswith("export "):
+                s = s[len("export "):].strip()
+            if s.partition("=")[0].strip() == key:
+                lines[i] = newline
+                found = True
+                break
+        if not found:
+            lines.append(newline)
+    from lkl.broker import fileio
+    fileio.atomic_write(p, "\n".join(lines) + "\n")
+    return cur

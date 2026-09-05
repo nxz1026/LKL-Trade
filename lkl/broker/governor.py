@@ -41,7 +41,10 @@ def _save(g: dict) -> None:
 
 
 def set_mode(mode: str, reason: str = "") -> dict:
-    """切模式；进入 armed 时记录当前配置账户为绑定账户（产品7-7）。"""
+    """切模式；进入 armed 时记录当前配置账户为绑定账户（产品7-7）。
+
+    审计留痕：切实盘(armed)按 CRIT、切演练(dry)按 INFO 写入告警中心（带时间/原因）。
+    """
     if mode not in ("dry", "armed"):
         raise ValueError(f"非法模式 {mode!r}（dry|armed）")
     g = state()
@@ -51,6 +54,9 @@ def set_mode(mode: str, reason: str = "") -> dict:
     if reason:
         g["reason"] = reason
     _save(g)
+    label = "实盘(armed)" if mode == "armed" else "演练(dry)"
+    alerts.emit("CRIT" if mode == "armed" else "INFO",
+                f"切{label}模式：{reason or '无原因'}")
     return g
 
 
@@ -81,6 +87,7 @@ def resume() -> dict:
     g = state()
     g["halt"], g["reason"] = False, ""
     _save(g)
+    alerts.emit("INFO", "解除紧急停止")
     return g
 
 

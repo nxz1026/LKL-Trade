@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from dashboard.trade_state import state
 from dashboard.sys_state import state as sys_state
-from lkl.broker import alerts, fileio, governor, recon, schedule, session, tradeops
+from lkl.broker import alerts, config, doctor, fileio, governor, recon, schedule, session, tradeops
 
 log = logging.getLogger("lkl.dash")
 
@@ -88,6 +90,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json",
                        json.dumps({"summary": alerts.summary(), "recs": recs},
                                   ensure_ascii=False).encode("utf-8"))
+        elif self.path == "/api/risk_limits":
+            self._send(200, "application/json",
+                       json.dumps({"limits": config.risk_limits()},
+                                  ensure_ascii=False).encode("utf-8"))
+        elif self.path == "/api/doctor":
+            self._send(200, "application/json",
+                       json.dumps(doctor.table(), ensure_ascii=False).encode("utf-8"))
         elif self.path.startswith("/api/recon"):
             self._send(200, "application/json",
                        json.dumps(reconcile_state(_query_date(self.path)),
@@ -109,19 +118,26 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps({"error": f"{type(e).__name__}: {e}"},
                                   ensure_ascii=False).encode("utf-8"))
 
+    def _auth_ok(self) -> bool:
+        """令牌 + Origin 校验（治理类 POST 共用）。"""
+        if self.headers.get("X-Dash-Token", "") != _TOKEN:
+            return False
+        origin = self.headers.get("Origin", "")
+        if origin and urlparse(origin).netloc != f"127.0.0.1:{self.server.server_port}":
+            return False
+        return True
+
     def _post(self) -> None:
-        """治理操作：POST /api/govern  body {action, reason}；需 X-Dash-Token。"""
+        """治理操作：POST /api/govern、/api/risk_limits；需 X-Dash-Token。"""
+        if self.path.startswith("/api/risk_limits"):
+            self._post_risk_limits()
+            return
         if not self.path.startswith("/api/govern"):
             self._send(404, "text/plain", b"not found")
             return
-        if self.headers.get("X-Dash-Token", "") != _TOKEN:
+        if not self._auth_ok():
             self._send(403, "application/json",
-                       json.dumps({"error": "缺少或错误 X-Dash-Token"}).encode("utf-8"))
-            return
-        origin = self.headers.get("Origin", "")
-        if origin and urlparse(origin).netloc != f"127.0.0.1:{self.server.server_port}":
-            self._send(403, "application/json",
-                       json.dumps({"error": "Origin 非本地看板，拒绝"}).encode("utf-8"))
+                       json.dumps({"error": "缺少或错误 X-Dash-Token / Origin"}).encode("utf-8"))
             return
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -135,6 +151,30 @@ class Handler(BaseHTTPRequestHandler):
             return
         msg = governor.run_cli(action, body.get("reason", ""))
         self._send(200, "application/json", json.dumps({"ok": True, "msg": msg}).encode())
+
+    def _post_risk_limits(self) -> None:
+        if not self._auth_ok():
+            self._send(403, "application/json",
+                       json.dumps({"error": "缺少或错误 X-Dash-Token / Origin"}).encode("utf-8"))
+            return
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            body = {}
+        try:
+            limits = config.set_risk_limits(body.get("limits", {}))
+        except ValueError as e:
+            self._send(400, "application/json",
+                       json.dumps({"error": str(e)}).encode())
+            return
+        except OSError as e:
+            self._send(500, "application/json",
+                       json.dumps({"error": f"写入失败：{e}"}).encode())
+            return
+        alerts.emit("INFO", f"风控上限已修改: {limits}")
+        self._send(200, "application/json",
+                   json.dumps({"ok": True, "limits": limits}).encode())
 
     def _send(self, code: int, ctype: str, body: bytes) -> None:
         self.send_response(code)
@@ -190,13 +230,41 @@ def archive_view(date: str | None = None) -> dict:
     return {"date": d, "archived": names, "count": len(names)}
 
 
+def _open_reminder_loop(stop) -> None:
+    """开市前提醒：距下一可交易起点 ≤5 分钟（且未在连续竞价中）推一次 WARN。
+
+    推送走 alerts.notify（GM_ALERT_WEBHOOK 配置后可达外部；无配置仅留痕日志）。
+    每一 next_open 时刻只提醒一次（sent 记录该起点），不重复轰炸。
+    """
+    sent = None
+    while not stop.is_set():
+        try:
+            now = session.now()
+            if not session.is_open(now):
+                nxt = session.next_open(now)
+                if nxt:
+                    key = nxt.isoformat()
+                    diff = (nxt - now).total_seconds()
+                    if sent != key and 0 < diff <= 300:
+                        sent = key
+                        alerts.notify("WARN",
+                                      f"距开市 {int(diff // 60)} 分钟（{nxt.strftime('%H:%M')}），请确认终端/账户就绪")
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(15)
+
+
 def run(argv: list[str]) -> int:
     port = int(argv[0]) if argv and argv[0].isdigit() else 8200
     _persist_token()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    stop = threading.Event()
+    threading.Thread(target=_open_reminder_loop, args=(stop,), daemon=True).start()
     print(f"trade 看板: http://127.0.0.1:{port}  Ctrl+C 退出")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        stop.set()
     return 0
