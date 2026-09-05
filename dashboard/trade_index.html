@@ -81,7 +81,7 @@ async function loadSys(){
         return `<td>${esc(f[k])}</td>`; }).join('')+'</tr>'; }).join('');
   $('files').innerHTML='<table>'+th+rows+'</table>';
 }
-var _countdownAt=null,_cdAlerted=false;
+var _countdownAt=null,_cdAlerted=false,_pullAt=null,_pullAlerted=false;
 function renderBanner(s,hb){
   const el=$('banner'); if(!el)return;
   const gov=s.govern||{};
@@ -91,20 +91,33 @@ function renderBanner(s,hb){
   const cred=s.creds_ok===false?'<span class="pill x">凭证缺失</span>':'';
   const term2=`<span class="pill ${s.terminal==='在线'?'o':'x'}">终端 ${esc(s.terminal)}</span>`;
   const bound=s.bound_account?`· 绑定账户 ${esc(s.bound_account)}`:'';
-  const pull=s.next_pull?`<span class="pill o">下次拉取 ${esc(s.next_pull).slice(11,19)}</span>`:('<span class="pill m">暂无拉取窗口</span>');
+  const hasPull=!!s.next_pull;
   _countdownAt=s.next_open?Date.parse(s.next_open):null;
-  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound} ${pull} <span id="opencd" class="pill m">-</span>`+
+  _pullAt=hasPull?Date.parse(s.next_pull):null;
+  el.innerHTML=`${mode} ${alive} ${cred} ${term2}${bound}`+
+    ` <span id="opencd" class="pill m">-</span>`+
+    (hasPull?` <span id="pullcd" class="pill o">-</span>`:'')+
     ` · 进程脉冲 ${esc(hb.last_success||'—')}`+` · 文件活动 ${esc(s.last_file_activity||'—')}`;
 }
 function cdTick(){
-  const el=$('opencd'); if(!el||!document.getElementById('banner'))return;
-  if(!_countdownAt){ el.textContent=''; return; }
-  const s=Math.max(0,Math.floor((_countdownAt-Date.now())/1000));
-  if(!s){ el.textContent='已到开市时点'; el.className='pill x'; return; }
+  const banner=document.getElementById('banner'); if(!banner)return;
+  const el=$('opencd');
+  const s=_countdownAt?Math.max(0,_countdownAt-Date.now()):null;
+  if(s!=null&&!s){ if(el){el.textContent='已到开市时点';el.className='pill x';} }
+  else{
+    if(el){ el.textContent=(s!=null?`距开市 ${_f(s)}`:'距开市 -'); el.className='pill '+(s!=null&&s<=300000&&!_cdAlerted?(_cdAlerted=true,'x'):'m'); }
+  }
+  const pull=$('pullcd');
+  const ps=_pullAt?Math.max(0,_pullAt-Date.now()):null;
+  if(pull){
+    if(ps!=null&&!ps){ pull.textContent='已到拉取时点'; pull.className='pill x'; }
+    else{ pull.textContent=(ps!=null?`距拉取 ${_f(ps)}`:'距拉取 -'); pull.className='pill o'; }
+  }
+}
+function _f(ms){
+  const s=Math.max(0,Math.floor(ms/1000));
   const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;
-  const txt=`距开市 ${h>0?h+':':''}${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
-  el.textContent=txt;
-  el.className='pill '+(s<=300&&!_cdAlerted?(_cdAlerted=true,'x'):'m');
+  return (h>0?h+':':'')+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');
 }
 function renderGovern(s){
   const el=$('govern'); if(!el)return;
@@ -205,15 +218,17 @@ function renderAccount(a){
   const mv=ps.reduce((s,p)=>s+(p.volume||0)*(p.last_price||0),0);
   const pnl=ps.reduce((s,p)=>s+(p.fpnl||0),0);
   const cost=ps.reduce((s,p)=>s+(p.volume||0)*(p.cost||0),0);
-  const top=ps.slice().sort((x,y)=>(y.volume||0)*(y.last_price||0)-(x.volume||0)*(x.last_price||0)).slice(0,3);
+  // 排序：市值降序（大仓在上），成本 vs 现价 vs 浮盈同列对照
+  const sorted=ps.slice().sort((x,y)=>(y.volume||0)*(y.last_price||0)-(x.volume||0)*(x.last_price||0));
+  const top=sorted.slice(0,3);
   el.innerHTML=`<div class="cash"><b>资产净值 ¥${num(c.nav)}</b><b>总资产 ¥${num(c.balance)}</b>`+
     `<b>可用 ¥${num(c.available)}</b><b>冻结 ¥${num(c.frozen)}</b></div>`+
     `<div class="cash"><b>持仓市值 ¥${num(mv)}</b><b>持仓成本 ¥${num(cost)}</b>`+
     `<b class="${pnl>=0?'ok':'bad'}">持仓浮盈 ¥${num(pnl)}</b><b>持仓 ${ps.length} 只</b></div>`+
     `<div class="sub">更新 ${t}`+
     (top.length?` · 前重仓：${top.map(p=>esc(p.symbol)+' ¥'+num((p.volume||0)*(p.last_price||0))).join(' / ')}`:'')+'</div>'+
-    (ps.length?`<table><tr><th>代码</th><th>数量</th><th>可用</th><th>成本</th><th>现价</th><th>浮盈</th></tr>`
-    +ps.map(p=>`<tr><td>${esc(p.symbol)}</td><td>${num(p.volume)}</td><td>${num(p.available)}</td><td>${num(p.cost)}</td><td>${num(p.last_price)}</td><td class="${(p.fpnl||0)>=0?'ok':'bad'}">${num(p.fpnl)}</td></tr>`).join('')+'</table>'
+    (sorted.length?`<table><tr><th>代码</th><th>数量</th><th>可用</th><th>成本</th><th>现价</th><th>市值</th><th>浮盈</th></tr>`
+    +sorted.map(p=>`<tr><td>${esc(p.symbol)}</td><td>${num(p.volume)}</td><td>${num(p.available)}</td><td>${num(p.cost)}</td><td>${num(p.last_price)}</td><td>${num((p.volume||0)*(p.last_price||0))}</td><td class="${(p.fpnl||0)>=0?'ok':'bad'}">${num(p.fpnl)}</td></tr>`).join('')+'</table>'
     :'<p class="sub">暂无持仓</p>');
 }
 function renderDecisions(o){
