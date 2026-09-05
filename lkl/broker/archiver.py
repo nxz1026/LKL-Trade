@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -51,8 +52,29 @@ def archive_one(src, day=None):
     return target
 
 
+def _consumable(src: Path, kind: str, day: str) -> bool:
+    """归档日是否已到该文件的可消费日；隔天投递（文件名日早于 for_date）不可提前归档。
+
+    决策身份即文件名（生成日），执行日由 payload for_date 决定——`lkl archive <day>`
+    按文件名日整批归档时会扫到 for_date 更晚的隔天投递（如周五生成、周一执行），
+    提前归档会让 is_archived 误判"已消费"，执行日被跳过（2026-09-05 联调事故复盘）。
+    读取失败按可归档处理，不因坏文件卡住盘后终结。
+    """
+    if kind != "decisions":
+        return True
+    try:
+        data = json.loads(src.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return True
+    fd = data.get("for_date") if isinstance(data, dict) else None
+    return not (isinstance(fd, str) and fd > day)
+
+
 def consume(kind: str, day: str) -> int:
-    """把该日(kind=YYYYMMDD_*)所有版本移入 archive/<day>/；返回条数。"""
+    """把该日(kind=YYYYMMDD_*)所有版本移入 archive/<day>/；返回条数。
+
+    隔天投递的决策（for_date 晚于归档日）跳过，未到执行日不归档。
+    """
     dest = fileio.directory() / "archive" / day
     dest.mkdir(parents=True, exist_ok=True)
     n = 0
@@ -60,6 +82,8 @@ def consume(kind: str, day: str) -> int:
     for src in sorted(fileio.directory().glob(f"{kind}_*"),
                       key=lambda p: p.name):
         if not src.name.startswith(prefix):
+            continue
+        if not _consumable(src, kind, day):
             continue
         target = dest / src.name
         i = 1

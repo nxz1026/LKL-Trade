@@ -349,3 +349,26 @@ def test_duplicate_decision_crossday_archive_guard(env):
     assert len(list(env.glob("results_*.json"))) == n_results
     assert not (fileio.directory() / name).exists()   # 残留副本被回收归档
     assert len(exchange.load_results(d)) == 1          # 仅一轮 results
+
+
+def test_archive_skips_future_dated_decision(env):
+    """`lkl archive <day>` 不提前归档隔天投递（文件名日早于 for_date）的决策：
+    防 is_archived 误判"已消费"，执行日被跳过（2026-09-05 联调事故复盘）。
+    """
+    import json
+    from lkl.broker import archiver, fileio
+    # 周一执行（for_date 09-07）但周五生成（文件名 09-04）的决策
+    future = fileio.directory() / "decisions_20260904_180636.json"
+    future.write_text(json.dumps({"schema": 2, "for_date": "2026-09-07",
+                                  "actions": [{"code": "601988", "action": "SELL"}]},
+                                 ensure_ascii=False), encoding="utf-8")
+    # 同日旧决策照常归档（09-04 孤儿退休场景）
+    old = fileio.directory() / "decisions_20260904_120115.json"
+    old.write_text(json.dumps({"schema": 2, "for_date": "2026-09-04",
+                               "actions": [{"code": "601988", "action": "SELL"}]},
+                              ensure_ascii=False), encoding="utf-8")
+    archiver.pack("2026-09-04")
+    assert (fileio.directory() / "archive" / "2026-09-04" / old.name).exists()
+    assert not (fileio.directory() / "archive" / "2026-09-04" / future.name).exists()
+    assert not archiver.is_archived(future.name)   # 执行日未到，不视为已消费
+    assert (fileio.directory() / future.name).exists()  # 仍留待周一执行
