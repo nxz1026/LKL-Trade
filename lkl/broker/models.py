@@ -34,4 +34,4 @@ class UserInfo:
     account_id: str = ""
     account_name: str = ""
     cash: CashInfo | None = None
-    positions: list = field(default_factory=list)
+    positions: list[PositionInfo] = field(default_factory=list)

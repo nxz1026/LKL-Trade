@@ -18,7 +18,7 @@ sftp -i ~/.ssh/DJ.pem ubuntu@ec2-35-78-74-90.ap-northeast-1.compute.amazonaws.co
 ## ① 单元/故障注入（无终端、无 DB、无远端）
 
 ```bash
-python -m pytest tests/ -v        # 期望 37 passed
+python -m pytest tests/ -v        # 期望 81 passed（基线 50 + 本次新增 31）
 python -m lkl.main trade govern status   # 默认 dry · 绑定账户 - · 在途 0
 ```
 

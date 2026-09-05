@@ -1,4 +1,4 @@
-"""P1-09 决策契约校验测试。"""
+"""决策契约校验测试。"""
 from __future__ import annotations
 
 from datetime import date

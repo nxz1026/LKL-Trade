@@ -1,7 +1,6 @@
 """执行层：BrokerExecutor（掘金仿真/交易实单）。
 
-只保留被测使用的 BrokerExecutor；已移除未接入的 Executor 协议与 ManualExecutor
-（对应审查 P3-01）。
+只保留被测使用的 BrokerExecutor；已移除未接入的 Executor 协议与 ManualExecutor。
 """
 from __future__ import annotations
 

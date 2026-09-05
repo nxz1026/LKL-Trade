@@ -11,7 +11,6 @@ import json
 from lkl.broker import fileio, session
 
 LEVELS = ("INFO", "WARN", "CRIT")
-_LEVEL = {"INFO": 0, "WARN": 1, "CRIT": 2}
 
 
 def _path():
@@ -54,15 +53,3 @@ def summary() -> dict:
             "crit": sum(1 for r in recs if r.get("level") == "CRIT"),
             "warn": sum(1 for r in recs if r.get("level") == "WARN"),
             "last": recs[-1] if recs else None}
-
-
-def alertcrit(msg: str) -> None:
-    emit("CRIT", msg)
-
-
-def alert_warn(msg: str) -> None:
-    emit("WARN", msg)
-
-
-def alert_info(msg: str) -> None:
-    emit("INFO", msg)

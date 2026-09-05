@@ -1,7 +1,7 @@
 """JSON 交易通道：读当日最新 decisions/results 带时间戳文件（不落库；schema v2）。
 
-- 按业务日过滤后再取该日内最新版本（P2-02：跨日文件不互遮）。
-- 决策**契约校验**（P1-09）：action 枚举、6 位无前缀 code、非负数量、exec 合法性；
+- 按业务日过滤后再取该日内最新版本（跨日文件不互遮）。
+- 决策**契约校验**：action 枚举、6 位无前缀 code、非负数量、exec 合法性；
   任一不合法即抛 `DecisionValidationError` 阻止整批，绝不静默下单或错位。
 - exec 执行语义（契约 v2）：OPEN_POS↔BUY 开仓 / CLOSE_ALL↔SELL 清仓；
   schema:1 旧文件缺 exec → BUY 兜底 OPEN_POS、SELL 兜底 CLOSE_ALL（不拒单）。

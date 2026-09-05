@@ -11,7 +11,7 @@ _KINDS = ("decisions", "results", "holdings")
 
 
 def archive_one(src, day=None):
-    """只归档绑定到的一份文件（对应审查 P0-05：不搬同批未处理版本）。"""
+    """只归档绑定到的一份文件（不搬同批未处理版本）。"""
     src = Path(src)
     day = day or datetime.now(session.TZ).date().isoformat()
     dest = fileio.directory() / "archive" / day

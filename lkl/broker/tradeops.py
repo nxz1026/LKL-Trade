@@ -1,18 +1,17 @@
 """单次执行核心：Signal→实单回报；去重、崩溃一致、并发互斥、绑定消费、治理门禁。
 
-- P0-01/02：只有 FILLED 才入防重账本；REJECTED/NO_POSITION/PARTIAL 可重试。
-- P0-03：先记意图再下单、重启对账，绝不重复提交。
-- P0-04：单执行器锁；P0-05：只归档绑定文件身份。
-- P1-08：固定顺序——先远端拉取，再选文件、校验、领取、执行。
+- 只有 FILLED 才入防重账本；REJECTED/NO_POSITION/PARTIAL 可重试。
+- 先记意图再下单、重启对账，绝不重复提交。
+- 单执行器锁；只归档绑定文件身份。
+- 固定顺序——先远端拉取，再选文件、校验、领取、执行。
 - 治理（产品7）：默认 dry 演练不得自动下单；急诊 halt 持久；风控护栏拦截。
 - v2 契约：results 行输出 action/code/ok/price/shares/order_id/reason。
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
-from lkl.broker import alerts, exchange, fileio, governor, intent, ledger, remote, resolve, trade_date
+from lkl.broker import alerts, config, exchange, fileio, governor, intent, ledger, remote, resolve, session, trade_date
 from lkl.broker.archiver import archive_one
 from lkl.broker.cleanup import remove_archived, remove_archived_name
 from lkl.broker.lock import single_executor
@@ -34,7 +33,7 @@ def _executor():
 
 
 def _now() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    return session.now().isoformat(timespec="seconds")
 
 
 def _st(value) -> OrderStatus:
@@ -91,8 +90,8 @@ def preview(for_date: str | None = None) -> int:
     with single_executor():
         remote.pull_all("decisions")
         srcs = exchange.decision_files(for_date)
-        is_day = session2().is_trading_day()
-        acc = config2().account_id() or "-"
+        is_day = session.is_trading_day()
+        acc = config.account_id() or "-"
         print(f"[预演 {for_date}] 交易日={'是' if is_day else '否'} 账户={acc} 模式={governor.state()['mode']}（只读不下单）")
         if not srcs:
             print("  无可执行动作（今日无待处理决策）")
@@ -129,15 +128,6 @@ def preview(for_date: str | None = None) -> int:
         return count
 
 
-def config2():
-    from lkl.broker import config
-    return config
-
-
-def session2():
-    from lkl.broker import session
-    return session
-
 
 def _price_map() -> dict:
     """已知最新价（持仓快照/实时持仓），用于预演资金占用粗估。"""
@@ -149,10 +139,12 @@ def _price_map() -> dict:
 
 
 def _try_positions() -> list:
+    """预演/价格粗估用持仓；查询失败记日志并返回空（只读路径，不阻断）。"""
     try:
         from lkl.broker import queries
         return queries.positions()
-    except Exception:
+    except Exception as e:
+        log.warning("持仓查询失败（预演按空仓估算）: %s", e)
         return []
 
 
@@ -223,6 +215,9 @@ def process_once(for_date: str | None = None, executor=None) -> int:
                     if ref not in done:
                         ledger.mark([ref])          # 人工 complete：按成交防重
                     continue
+                if verdict == "retry":
+                    intent.finish(ref)              # 人工 retry：唯一在途释放通道，清 pending 后放行重试
+                    log.info("ref=%s 人工 retry，已清在途", ref)
                 if ref in done or any(_st(r["status"]).terminal
                                       for r in by_ref.get(ref, [])):
                     continue

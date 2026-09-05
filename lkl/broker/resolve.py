@@ -49,7 +49,7 @@ def resolve(ref: str, action: str, by: str = "manual", note: str = "") -> str:
 
 
 def apply(m: dict, ref: str) -> str | None:
-    """process_once 调用：按处置决定 ref 命运；返回 'done'|'skip'|None(照常)。"""
+    """process_once 调用：按处置决定 ref 命运；返回 'retry'|'done'|'skip'|None(照常)。"""
     rec = m.get(ref)
     if not rec:
         return None
@@ -58,7 +58,7 @@ def apply(m: dict, ref: str) -> str | None:
         return "skip"           # 放弃：不自动下单/重试
     if act == "complete":
         return "done"           # 人工完成：按已成交处理
-    return None                  # retry：放行（清除标记，让正常重试走）
+    return "retry"              # 人工重试：由 process_once 清在途后放行（唯一人工释放通道）
 
 
 def dismiss(ref: str) -> None:

@@ -30,7 +30,7 @@
 ## 2. results（交易端 → DB，每次执行写新时间戳文件）
 
 ```json
-{ "schema": 1, "for_date": "2026-09-03", "trades": [ … ] }
+{ "schema": 2, "for_date": "2026-09-03", "trades": [ … ] }
 ```
 
 每份 trades[] 行（**DB 消费字段**）：

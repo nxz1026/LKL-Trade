@@ -1,20 +1,59 @@
 from __future__ import annotations
 
 import json
+import logging
+import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from dashboard.trade_state import state
 from dashboard.sys_state import state as sys_state
 from lkl.broker import alerts, fileio, governor, recon, schedule, session, tradeops
 
+log = logging.getLogger("lkl.dash")
+
 _HTML = Path(__file__).with_name("trade_index.html")
 
 _ACTS = ("status", "dry", "arm", "halt", "resume")
 
+# 本地回环治理令牌：写 exchange_dir/.dash_token 供运维读取；POST /api/govern 必须携带
+# （防本机进程/浏览器恶意页面触发 arm/halt 等资金级操作）
+_TOKEN = secrets.token_hex(16)
+
+
+def _persist_token() -> None:
+    try:
+        p = fileio.directory() / ".dash_token"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fileio.atomic_write(p, _TOKEN)
+    except OSError:
+        pass
+
+
+def _query_date(path: str) -> str | None:
+    """解析 ?d=YYYY-MM-DD；兼容旧式裸值 ?YYYY-MM-DD。"""
+    q = urlparse(path).query
+    if not q:
+        return None
+    vals = parse_qs(q).get("d")
+    return vals[0] if vals else q.strip() or None
+
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
+        try:
+            self._get()
+        except Exception as e:
+            if self.path.startswith("/api/"):
+                self._send(200, "application/json",
+                           json.dumps({"error": f"{type(e).__name__}: {e}"},
+                                      ensure_ascii=False).encode("utf-8"))
+            else:
+                self._send(500, "text/plain; charset=utf-8",
+                           f"internal error: {type(e).__name__}: {e}".encode("utf-8"))
+
+    def _get(self) -> None:
         if self.path in ("/", "/index.html"):
             self._send(200, "text/html; charset=utf-8", _HTML.read_bytes())
         elif self.path == "/api/state":
@@ -23,21 +62,21 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/sys":
             self._send(200, "application/json",
                        json.dumps(sys_state(), ensure_ascii=False, default=str).encode("utf-8"))
+        elif self.path == "/api/token":
+            self._send(200, "application/json", json.dumps({"token": _TOKEN}).encode("utf-8"))
         elif self.path.startswith("/api/versions"):
-            d = self.path.partition("?")[2] or None
             self._send(200, "application/json",
-                       json.dumps(versions_view(d), ensure_ascii=False, default=str).encode("utf-8"))
+                       json.dumps(versions_view(_query_date(self.path)), ensure_ascii=False,
+                                  default=str).encode("utf-8"))
         elif self.path.startswith("/api/archive"):
-            d = self.path.partition("?")[2] or None
             self._send(200, "application/json",
-                       json.dumps(archive_view(d), ensure_ascii=False).encode("utf-8"))
+                       json.dumps(archive_view(_query_date(self.path)), ensure_ascii=False).encode("utf-8"))
         elif self.path.startswith("/api/preview"):
-            d = self.path.partition("?")[2] or None
             import io, contextlib
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 try:
-                    tradeops.preview(d)
+                    tradeops.preview(_query_date(self.path))
                     err = ""
                 except Exception as e:
                     err = f"{type(e).__name__}: {e}"
@@ -50,9 +89,9 @@ class Handler(BaseHTTPRequestHandler):
                        json.dumps({"summary": alerts.summary(), "recs": recs},
                                   ensure_ascii=False).encode("utf-8"))
         elif self.path.startswith("/api/recon"):
-            d = self.path.partition("?")[2] or None
-            body = json.dumps(reconcile_state(d), ensure_ascii=False, default=str)
-            self._send(200, "application/json", body.encode("utf-8"))
+            self._send(200, "application/json",
+                       json.dumps(reconcile_state(_query_date(self.path)),
+                                  ensure_ascii=False, default=str).encode("utf-8"))
         elif self.path == "/api/meta":
             now = session.now()
             m = {"now": now.isoformat(timespec="seconds"),
@@ -63,9 +102,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain; charset=utf-8", b"not found")
 
     def do_POST(self) -> None:
-        """治理操作：POST /api/govern  body {action, reason}。"""
+        try:
+            self._post()
+        except Exception as e:
+            self._send(500, "application/json",
+                       json.dumps({"error": f"{type(e).__name__}: {e}"},
+                                  ensure_ascii=False).encode("utf-8"))
+
+    def _post(self) -> None:
+        """治理操作：POST /api/govern  body {action, reason}；需 X-Dash-Token。"""
         if not self.path.startswith("/api/govern"):
             self._send(404, "text/plain", b"not found")
+            return
+        if self.headers.get("X-Dash-Token", "") != _TOKEN:
+            self._send(403, "application/json",
+                       json.dumps({"error": "缺少或错误 X-Dash-Token"}).encode("utf-8"))
+            return
+        origin = self.headers.get("Origin", "")
+        if origin and urlparse(origin).netloc != f"127.0.0.1:{self.server.server_port}":
+            self._send(403, "application/json",
+                       json.dumps({"error": "Origin 非本地看板，拒绝"}).encode("utf-8"))
             return
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -87,8 +143,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, *args) -> None:
-        pass  # 静默访问日志
+    def log_message(self, fmt: str, *args) -> None:
+        """访问日志收敛：POST（治理操作）与 >=400 错误进日志；普通 GET 静默。"""
+        try:
+            code = int(args[1]) if len(args) > 1 and str(args[1]).isdigit() else 0
+            if self.command == "POST" or code >= 400:
+                log.warning("%s - %s", self.address_string(), fmt % args)
+        except Exception:
+            pass
 
 
 def reconcile_state(for_date: str | None = None):
@@ -101,14 +163,11 @@ def reconcile_state(for_date: str | None = None):
 
 def versions_view(for_date: str | None = None) -> dict:
     """当日 decisions 全部本地版本：文件/时间/是否当前生效。"""
-    import json as _j
-    from pathlib import Path
     for_date = for_date or session.now().date().isoformat()
     rows = []
     for p in fileio.versions("decisions"):
-        try:
-            obj = _j.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        obj = fileio.read_json_safe(p)
+        if obj is None:
             continue
         if obj.get("for_date") != for_date:
             continue
@@ -133,6 +192,7 @@ def archive_view(date: str | None = None) -> dict:
 
 def run(argv: list[str]) -> int:
     port = int(argv[0]) if argv and argv[0].isdigit() else 8200
+    _persist_token()
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"trade 看板: http://127.0.0.1:{port}  Ctrl+C 退出")
     try:

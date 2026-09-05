@@ -1,7 +1,7 @@
 """委托结果值对象：order_id + 权威状态（OrderStatus）+ 成交明细。
 
 执行层与 broker 共用，避免循环依赖；任何状态必须是 OrderStatus 终态语义。
-（对应审查 P0-02/P2-10：拒绝用布尔/裸字符串表达订单生命周期。）
+（拒绝用布尔/裸字符串表达订单生命周期。）
 """
 from __future__ import annotations
 

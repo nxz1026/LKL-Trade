@@ -1,8 +1,8 @@
 """watch：盘中轮询 decisions.json，新动作即实单回报（去重、循环到截止）。
 
-- 时间一律 Asia/Shanghai（P2-04），不得用本机 UTC/本地。
-- 参数边界（P2-09）：interval≥5s、until 必须 HH:MM 合法。
-- 下单受交易日/盘中门禁约束，盘外自动拒单可重试（P1-03）。
+- 时间一律 Asia/Shanghai，不得用本机 UTC/本地。
+- 参数边界：interval≥5s、until 必须 HH:MM 合法。
+- 下单受交易日/盘中门禁约束，盘外自动拒单可重试。
 """
 from __future__ import annotations
 

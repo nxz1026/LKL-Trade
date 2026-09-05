@@ -1,8 +1,8 @@
 """A股交易时段与交易日判定（一律 Asia/Shanghai）。
 
-对应审查 P1-03/P1-04：is_open 只看钟点；is_trading_day 进一步判定周末与
-休市日（节假日），两者合起来才是「真实可下单」。（手工 trade / watch / sup 三个
-入口统一在此门禁，见 policy.market_verdict。）
+is_open 只看钟点；is_trading_day 进一步判定周末与休市日（节假日），
+两者合起来才是「真实可下单」。（手工 trade / watch / sup 三个入口统一在此门禁，
+见 policy.market_verdict。）
 """
 from __future__ import annotations
 
@@ -55,8 +55,8 @@ def next_open(dt: datetime | None = None) -> datetime | None:
     base = dt or now()
     if base.time() < _MORNING[0] and is_trading_day(base):
         return base.replace(hour=9, minute=30, second=0, microsecond=0)
-    if _MORNING[0] <= base.time() <= time(11, 30):
-        return base.replace(hour=13, minute=0, second=0, microsecond=0)
+    if _MORNING[0] <= base.time() < _AFTERNOON[0] and is_trading_day(base):
+        return base.replace(hour=13, minute=0, second=0, microsecond=0)  # 上午/午休 → 当日 13:00
     for i in range(1, 8):
         cand = base.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=i)
         if is_trading_day(cand):

@@ -33,7 +33,7 @@ DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
   - `pending.json`（本机）：下单意图日志（防崩溃在「已下单-未记账」窗口重复提交）
   - `heartbeat.json`：本地进程脉冲（本地看板判 sup 存活；不进 v2 契约、不上传远端）
 - **执行日一致性**：所有业务日期一律 **Asia/Shanghai**。
-- **交易时段**：盘内(9:30-11:30/13:00-15:00)自动执行；周末与休市日（`GM_HOLIDAYS`）不开市；
+- **交易时段**：盘内(9:30-11:30/13:00-15:00)自动执行；周末与休市日（`GM_HOLIDAYS`）不开市；看板「下一可交易」午休期显示当日 13:00；
   任何 `trade / watch / sup` 入口统一在订单层做交易时段门禁（盘外拒单，开市后再试）。
 - **window**（契约 v2 起仅为展示标签，不参与执行判断）：MORNING/AFTERNOON/NONE 等原买入口径不再有执行语义；SELL 清仓与 window=NONE 并存是正常组合，照样下单。
 - **调度窗口**：盘内自动执行当日决策；工作日 12:01-12:59 与 17:30-18:01 每 1 分钟轮询同步决策。
@@ -80,11 +80,11 @@ lkl trade govern <status|dry|arm|halt|resume>  # 安全治理：默认 dry 演�
 lkl trade preview [date] # 交易前预演：逐条可执行/受阻原因，不下单不落盘
 lkl trade recon [date]   # 对账：决策/成交/持仓(±委托) 四源一致，异常返回非0
 lkl trade alerts         # 告警中心：CRIT/WARN 汇总 + 明细
-lkl trade resolve <ref> <retry|ignore|complete> [note]  # 人工处置拒单/部分成交/不符
+lkl trade resolve <ref> <retry|ignore|complete> [note]  # 人工处置：retry=清在途放行重试 / ignore=放弃 / complete=按成交
 lkl doctor               # 首次使用自检向导（切实盘前置要求关键项通过）
 lkl sup [interval=60]    # 常驻调度器：跨日归档/sync/check + 盘中自动下单(单轮异常自动续)
                                 #   GM_KEEP_REMOTE=1：成交/对账前保留远端决策不自动删
-lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200
+lkl dash [port=8200]     # 本地看板 http://127.0.0.1:8200（治理操作需 X-Dash-Token，见 ~/trade/.dash_token）
 lkl archive [YYYY-MM-DD] # 归档已消费文件 → archive/<日期>/
 ```
 
@@ -124,5 +124,6 @@ docs/        exchange-contract.v2.md(字段契约) · TESTING.md(测试步骤) �
 - **REJECTED（含门禁拒，如盘外「非交易日或不在盘中时段」）与 EXCLUDED 是两回事**：REJECTED 可重试、
   留档待开市再试；EXCLUDED 是历史/人工语义、不再重试。结果文件里的 `status` 字段是唯一权威，别猜。
 - 单执行器进程锁；先记意图(pending.json)再下单、重启对账，防崩溃重复提交。
+- 代码段位白名单：6/9/5→沪(SHSE.)、0/1/2/3→深(SZSE.)；4/8/920 开头为北交所，当前 gmtrade 无 BJSE 前缀支持，明确拒绝而非默认归深（不下错单）。
 - 风控护栏（`GM_RISK_*`）在订单前拦截；对账不符/风控拦截/急停/调度异常进 `alerts.jsonl` 分级告警。
 - 测试与双端联调：见 `docs/TESTING.md`（分级步骤）与 `docs/DB-CONFIRM.md`（DB 需拍板项）。

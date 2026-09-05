@@ -12,7 +12,6 @@
 """
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime
 
@@ -71,9 +70,8 @@ def _latest() -> tuple:
     p = fileio.latest("manual_orders")
     if not p:
         return None, set()
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (ValueError, OSError, UnicodeDecodeError):
+    data = fileio.read_json_safe(p)
+    if data is None:
         return None, set()
     return (data.get("for_date"),
             {(r.get("order_id", ""), r.get("status", ""))

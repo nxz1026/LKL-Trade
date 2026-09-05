@@ -1,7 +1,7 @@
 """订单生命周期唯一权威定义：终态/可重试/成交 判定。
 
 所有执行/回报/看板共用此枚举，消除各处自造的状态词（en/中文、布尔 ok）。
-规则（对应审查 P0-01/P0-02/P2-10）：
+规则：
 
 - 只有 ``FILLED`` 是「已确认成交」——唯一允许写入防重账本 executed.json。
 - ``REJECTED / NO_POSITION / PARTIAL / SUBMITTED / NOT_FOUND`` 都可自动重试，

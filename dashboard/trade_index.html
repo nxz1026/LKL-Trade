@@ -101,7 +101,12 @@ function renderGovern(s){
     `<button style="background:#c0392b;color:#fff" onclick="govAct('halt','人工紧急停止')">紧急停止</button>`+
     `<button onclick="govAct('resume')">解除</button>`;
 }
-async function govAct(a,r){ await fetch('/api/govern',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,reason:r||''})}); loadSys(); }
+var _dashToken=null;
+async function govAct(a,r){
+  if(!_dashToken){ try{ _dashToken=(await (await fetch('/api/token')).json()).token; }catch(e){} }
+  await fetch('/api/govern',{method:'POST',headers:{'Content-Type':'application/json','X-Dash-Token':_dashToken||''},body:JSON.stringify({action:a,reason:r||''})});
+  loadSys();
+}
 function renderAccount(a){
   const el=$('account'); const t=new Date().toLocaleTimeString('zh-CN',{hour12:false});
   if(!a.ok){ el.innerHTML=`${bad('未连接')}：${esc(a.note||'')}<div class="sub">更新 ${t}</div>`; return; }
@@ -138,8 +143,8 @@ function renderOrders(obj){
     +`<td>${o.price?num(o.price):'市价'}</td><td>${num(o.filled)}</td><td>${num(o.remaining)}</td><td>${esc(o.status_label||o.status)}</td></tr>`).join('')+'</table>';
 }
 async function fetchVersions(d){
-  try{ const v=await (await fetch('/api/versions?'+d)).json();
-    const a=await (await fetch('/api/archive?'+d)).json();
+  try{ const v=await (await fetch('/api/versions?d='+d)).json();
+    const a=await (await fetch('/api/archive?d='+d)).json();
     const el=$('decmeta'); if(!el)return;
     const cur=v.versions.filter(x=>x.active).length;
     el.textContent=`决策文件版本 ${v.versions.length} · 当前生效 ${cur} · 已归档 ${a.count}`;

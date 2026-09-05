@@ -1,6 +1,6 @@
 """注册/卸载 LKL-Trade 开机自启计划任务（Windows PowerShell）。
 
-整改（对应审计 P2-06）：
+整改：
 - 不再把路径硬编码写死——终端路径可探测/环境变量覆盖，缺文件时报错并给出当前值。
 - 非重启任务 settings 用 `$null`（真 PowerShell 空值），不再写裸词 `Null`。
 - PowerShell 输出按 utf-8→gbk 依次解码，杜绝 utf8 恒返回字符串导致的解码失效。

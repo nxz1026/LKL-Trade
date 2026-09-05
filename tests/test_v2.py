@@ -83,3 +83,18 @@ class _FilledExecutor:
         from lkl.broker.orderstate import OrderStatus
         from lkl.broker.result import ExecResult
         return ExecResult(order_id, OrderStatus.NOT_FOUND)
+
+def test_traded_at_uses_shanghai_now():
+    """traded_at 一律 Asia/Shanghai（session.now），不得用机器本地时区。"""
+    from lkl.broker import session, tradeops
+    from lkl.broker.orderstate import OrderStatus
+    from lkl.broker.result import ExecResult
+    from lkl.models.types import Signal
+    from datetime import date
+    sig = Signal(confirm_date=date(2026, 9, 5), code="601988", action="BUY")
+    res = ExecResult("oid", OrderStatus.FILLED, filled=100, remaining=0, avg_price=10.5)
+    before = session.now().isoformat(timespec="seconds")
+    row = tradeops._row(sig, res, "note")
+    after = session.now().isoformat(timespec="seconds")
+    assert before <= row["traded_at"] <= after
+    assert row["traded_at"].endswith("+08:00")   # 上海时区，非本机 UTC/本地

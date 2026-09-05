@@ -1,6 +1,6 @@
 """调度：盘内执行当日决策；12:01-12:59/17:30-18:01 每分拉取；未来日留至次日执行。
 
-对应审查 P1-10 与产品7：主循环单轮失败必须**记录并继续**；写分级心跳
+主循环单轮失败必须**记录并继续**；写分级心跳
 （last_success + 各活动时间戳：拉取/下单/快照/账户），终端离线与凭证缺失会告警。
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ import logging
 import time
 from datetime import datetime
 
-from lkl.broker import alerts, config, fileio, gate, remote, schedule, session
+from lkl.broker import alerts, config, fileio, gate, governor, intent, ledger, remote, schedule, session
 from lkl.broker.archiver import pack
 from lkl.broker.cleanup import remove_archived
 from lkl.broker.sync import snapshot
@@ -108,6 +108,12 @@ def run(argv: list[str]) -> int:
                 time.sleep(_MIN)
         except Exception as e:  # noqa: BLE001
             log.exception("调度单轮异常（存活继续）: %s", e)
+            if isinstance(e, (ledger.LedgerCorruptError, intent.PendingCorruptError)):
+                # 防重账本/在途意图损坏：安全记录失效，必须停市而非仅告警继续
+                try:
+                    governor.halt(f"{type(e).__name__}，安全记录损坏，自动停市")
+                except Exception:  # noqa: BLE001
+                    pass
             alerts.emit("CRIT", f"调度异常：{type(e).__name__}: {e}")
             _heartbeat(note=f"异常: {e}")
             time.sleep(_MIN)

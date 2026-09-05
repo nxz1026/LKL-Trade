@@ -1,6 +1,6 @@
 """单执行器锁：同一交换目录同时只允许一个执行权持有者。
 
-对应审查 P0-04：`sup` / `trade` / `trade watch` 启动必须先抢占该锁，
+`sup` / `trade` / `trade watch` 启动必须先抢占该锁，
 抢不到即明确退出，绝不并行处理同一决策。Windows 用 msvcrt 字节锁，
 POSIX 用 fcntl.flock（均跨进程的 advisory 锁，双方都遵守即有效）。
 """
