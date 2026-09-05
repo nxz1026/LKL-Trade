@@ -18,13 +18,15 @@ sftp -i ~/.ssh/DJ.pem ubuntu@ec2-35-78-74-90.ap-northeast-1.compute.amazonaws.co
 ## ① 单元/故障注入（无终端、无 DB、无远端）
 
 ```bash
-python -m pytest tests/ -v        # 期望 81 passed（基线 50 + 本次新增 31）
+python -m pytest tests/ -v        # 期望 90 passed（82 基线 + 产品功能批次新增 8）
 python -m lkl.main trade govern status   # 默认 dry · 绑定账户 - · 在途 0
 ```
 
 覆盖：拒单不入账本 / 崩溃在途不重下 / 并发单执行器锁 / 部分成交不重复下单 /
 SELL+window=NONE 照常下单（v2 展示标签）/ 坏决策文件整批拒绝 / 账本损坏阻断 /
-对账一致与冲突 / 人工处置 ignore|complete / 周末不开市 / v2 结果行字段。全绿再往下。
+对账一致与冲突 / 人工处置 ignore|complete / 周末不开市 / v2 结果行字段 /
+告警 webhook 推送（CRIT/WARN 触发、无配置静默）/ 风控上限写读·覆盖·非法值 /
+doctor 表形状 / 委托合并视图（source 标记、manifest 兜底）。全绿再往下。
 
 ## ② 只读与回写（需终端；远端仍隔离）
 
@@ -45,8 +47,13 @@ lkl trade preview          # 交易日/账户/拟量/占用/阻断原因
 lkl trade                  # 单次执行
 lkl trade recon            # 期望 一致 1 / 异常 0
 lkl trade alerts           # 无 CRIT
-lkl dash                   # 浏览器 http://127.0.0.1:8200：治理=实盘、对账、告警
+lkl dash                   # 浏览器 http://127.0.0.1:8200
 ```
+
+看板核对点（产品功能批次）：今日委托可见**手动/自动来源列**并可筛选；
+回报行「链」展开出 决策→委托→成交；账户卡有持仓汇总（市值/成本/浮盈/前重仓）且表按市值排序；
+系统运行状态页「运行前自检」出 7 项 ✓/✗；治理按钮（切实盘/急停）有二次确认弹窗，操作出现在告警中心；
+风控上限输入框保存后进程内 `risk_limits()` 立即读回新值（写 `.secrets/gm.env`，即时生效，无需重启）。
 
 核对：`results_*.json` 字段含 ok/price/shares/order_id/status/status_label/reason；
 `executed.json` 只记成交 ref；user1 中 decisions 已自删。
