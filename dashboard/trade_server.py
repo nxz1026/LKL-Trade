@@ -15,7 +15,15 @@ from lkl.broker import alerts, config, doctor, fileio, governor, recon, schedule
 
 log = logging.getLogger("lkl.dash")
 
-_HTML = Path(__file__).with_name("trade_index.html")
+import sys as _sys
+if getattr(_sys, "frozen", False):
+    _exe_dir = Path(_sys.executable).resolve().parent
+    _cand = (_exe_dir / "trade_index.html",
+             _exe_dir / "_internal" / "trade_index.html",
+             _exe_dir / "_internal" / "dashboard" / "trade_index.html")
+    _HTML = next((p for p in _cand if p.exists()), _cand[0])
+else:
+    _HTML = Path(__file__).with_name("trade_index.html")
 
 _ACTS = ("status", "dry", "arm", "halt", "resume")
 

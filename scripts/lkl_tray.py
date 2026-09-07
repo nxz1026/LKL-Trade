@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as wt
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -21,8 +22,17 @@ import time
 import webbrowser
 from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[1]
-_LOG = _REPO / "logs"
+_FROZEN = bool(getattr(sys, "frozen", False))
+if _FROZEN:
+    # 打包环境：应用目录 = exe 所在目录（安装目录），服务=同目录 boot exe
+    _REPO = Path(sys.executable).resolve().parent
+    _SELF = Path(sys.executable).resolve()
+    _LOG = _REPO / "logs"
+else:
+    # 源码环境：仓库根 + venv pythonw
+    _REPO = Path(__file__).resolve().parents[1]
+    _SELF = None
+    _LOG = _REPO / "logs"
 sys.path.insert(0, str(_REPO))
 
 _DASH_PORT = "8200"
@@ -92,12 +102,16 @@ kernel32 = ctypes.windll.kernel32
 _bind(kernel32.GetModuleHandleW, wt.HINSTANCE, wt.LPCWSTR)
 shell32.Shell_NotifyIconW.argtypes = [wt.DWORD, ctypes.POINTER(NOTIFYICONDATAW)]
 
-_PYW = _REPO / ".venv-trade" / "Scripts" / "pythonw.exe"
-_PY = _REPO / ".venv-trade" / "Scripts" / "python.exe"
-_PY = _PY if _PY.exists() else Path(sys.executable)
-_PYW = _PYW if _PYW.exists() else _PY
-_SERVICES = {"sup": [_PYW, "-m", "lkl.main", "sup"],
-             "dash": [_PYW, "-m", "lkl.main", "dash", _DASH_PORT]}
+if _FROZEN:
+    # 打包环境：boot exe 无窗口运行子命令（subprocess 不带 CREATE_NO_WINDOW 时不弹黑框）
+    _SERVICES = {"sup": [_SELF, "sup"],
+                 "dash": [_SELF, "dash", _DASH_PORT]}
+else:
+    _PYW = _REPO / ".venv-trade" / "Scripts" / "pythonw.exe"
+    _PY = _REPO / ".venv-trade" / "Scripts" / "python.exe"
+    _PYW = _PYW if _PYW.exists() else _PY
+    _SERVICES = {"sup": [_PYW, "-m", "lkl.main", "sup"],
+                 "dash": [_PYW, "-m", "lkl.main", "dash", _DASH_PORT]}
 
 
 class TrayManager:
@@ -107,6 +121,9 @@ class TrayManager:
     def start(self, name: str) -> str:
         if self.is_alive(name):
             return f"{name} 已在运行"
+        exe = Path(_SERVICES[name][0])
+        if not exe.exists():
+            return f"{name} 启动失败：可执行体缺失 {exe}"
         _LOG.mkdir(parents=True, exist_ok=True)
         logf = open(_LOG / f"{name}.log", "ab", buffering=0)
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -160,16 +177,57 @@ def _govern(action: str, note: str = "") -> str:
 
 
 def health() -> int:
+    """自检：可执行体/服务入口/Win32/核心模块/配置与交换目录/金矿终端。"""
+    svc = Path(_SERVICES["sup"][0])
+    cfg = _lazy_config()
     ok = True
-    for label, cond in (("pythonw", Path(_PYW).exists()),
-                        ("user32", True), ("shell32", True),
-                        ("lkl", _import("lkl"))):
-        print(("  ✓ " if cond else "  ✗ ") + label)
+    for label, cond, why in (
+            ("服务入口", svc.exists(), "" if svc.exists() else f"缺失 {svc}"),
+            ("user32", True, ""), ("shell32", True, ""),
+            ("lkl", _import("lkl"), "lkl 包导入失败"),
+            ("config.env", cfg.secrets_file().exists(),
+             f"配置缺失 {cfg.secrets_file()}（用 config.env 模板填写）"),
+            ("交换目录", _can_write(cfg.trade_dir()), ""),
+            ("终端(7001)", _port_up(cfg.endpoint()), "金矿终端未启动或端口不可达"),
+    ):
+        mark = "[OK] " if cond else "[NG] "
+        print(mark + label + (f"  ({why})" if why and not cond else ""))
         ok = ok and cond
     return 0 if ok else 1
 
 
+def _can_write(d: Path) -> bool:
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / ".lkl_probe"
+        p.write_text("ok", encoding="utf-8")
+        p.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _port_up(ep: str) -> bool:
+    host, _, port = (ep or "127.0.0.1:7001").partition(":")
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(2)
+    try:
+        return s.connect_ex((host or "127.0.0.1", int(port or 7001))) == 0
+    finally:
+        s.close()
+
+
 def _import(mod: str) -> bool:
+    try:
+        __import__(mod)
+        return True
+    except Exception:
+        return False
+
+
+def _lazy_config():
+    from lkl.broker import config
+    return config
     try:
         __import__(mod)
         return True

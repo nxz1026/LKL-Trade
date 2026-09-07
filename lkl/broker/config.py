@@ -8,10 +8,27 @@
 模板见 .env.example，取值见 README。"""
 from __future__ import annotations
 import os
+import sys
 from pathlib import Path
 
 _DEFAULTS = {"GM_ENDPOINT": "127.0.0.1:7001", "TRADE_DIR": "~/trade"}
 _REPO = Path(__file__).resolve().parents[2]
+
+
+def _frozen() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def app_root() -> Path:
+    """应用目录：源码=仓库根；frozen(打包)=可执行文件所在目录（安装目录）。"""
+    if _frozen():
+        return Path(sys.executable).resolve().parent
+    return _REPO
+
+
+def config_dir() -> Path:
+    """配置目录：frozen=应用目录（config.env 随安装位置，卸载即清）；源码=<仓库根>。"""
+    return app_root()
 
 
 def _env(key: str) -> str:
@@ -19,7 +36,7 @@ def _env(key: str) -> str:
 
 
 def secrets_file() -> Path:
-    return Path(_env("GM_ENV_FILE") or str(_REPO / ".secrets" / "gm.env")).expanduser()
+    return Path(_env("GM_ENV_FILE") or str(app_root() / "config.env")).expanduser()
 
 
 def _secret(name: str) -> str:
@@ -145,3 +162,53 @@ def set_risk_limits(values: dict) -> dict:
     from lkl.broker import fileio
     fileio.atomic_write(p, "\n".join(lines) + "\n")
     return cur
+
+
+_TEMPLATE = """# LKL-Trade 配置文件（首次运行自动生成，改后需重启 sup/dash 生效）
+# 所有键均可改为环境变量（同名覆盖），默认从本文件读取。
+
+# ---------- 掘金仿真凭据（必填） ----------
+GM_TOKEN=
+GM_ACCOUNT_ID=
+# 金矿终端本地服务地址（默认即可，不必设）
+GM_ENDPOINT=127.0.0.1:7001
+
+# ---------- 两端共享：JSON 交易通道 ----------
+# 交换目录：本机写 results/holdings；策略端写 decisions。
+# 默认 %USERPROFILE%\\trade
+TRADE_DIR=~/trade
+
+# ---------- 运行依赖 ----------
+# 金矿终端(Hongshu Goldminer3) 需在 127.0.0.1:7001 运行且已登录账户
+# 契约：decisions.json(策略->本机)、results.json(本机->策略)、holdings.json(真仓快照)
+# 休市日补充（逗号分隔 YYYY-MM-DD），周末内置休市
+GM_HOLIDAYS=
+# 风控护栏（0=不限）：单笔股数 / 当日下单次数 / 当日操作只数
+GM_RISK_MAX_QTY=0
+GM_RISK_MAX_ORDERS=0
+GM_RISK_MAX_CODES=0
+# 1=对账联券商当日委托核验
+GM_RECON_ORDERS=0
+# 1=归档后保留远端决策供审计
+GM_KEEP_REMOTE=0
+# 告警外部可达通知：逗号分隔 webhook URL（钉钉/企微/Server酱 等 JSON POST 兼容）
+GM_ALERT_WEBHOOK=
+
+# ---------- 受限 SFTP 交换（v2，无 shell） ----------
+# GM_REMOTE_DIR=你的用户子目录（如 user1）；绝对路径 / 含 .. 会拒绝；不填为纯本地
+GM_REMOTE_HOST=
+GM_REMOTE_KEY=~/.ssh/DJ.pem
+GM_REMOTE_DIR=user1
+"""
+
+
+def ensure_config() -> Path:
+    """首启生成 config.env 模板（已存在则跳过）。返回配置文件路径。"""
+    p = secrets_file()
+    if not p.exists():
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(_TEMPLATE, encoding="utf-8")
+        except OSError:
+            pass   # 只读目录等：静默，后续读空值由 doctor 提示
+    return p

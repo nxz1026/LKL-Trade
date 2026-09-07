@@ -17,8 +17,8 @@ def run() -> int:
     checks = _all_checks()
     bad = 0
     for name, ok, why in checks:
-        mark = "✓" if ok else "✗"
-        print(f"  {mark} {name}" + (f"  ({why})" if why and not ok else ""))
+        mark = "[OK] " if ok else "[NG] "
+        print(mark + name + (f"  ({why})" if why and not ok else ""))
         bad += (not ok)
     print(f"自检完成：通过 {len(checks) - bad}/{len(checks)}" + ("（可切实盘）" if bad == 0 else "（存在失败项）"))
     return 0 if bad == 0 else 1
