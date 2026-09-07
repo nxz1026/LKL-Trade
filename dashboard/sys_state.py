@@ -47,8 +47,20 @@ def _heartbeat() -> dict:
             stale = (session.now() - t) > timedelta(minutes=_STALE_MIN)
         except ValueError:
             stale = True
+    sleeping = obj.get("sleeping_until")
+    sleeping_dt = None
+    if sleeping:
+        try:
+            sleeping_dt = datetime.fromisoformat(sleeping)
+            if sleeping_dt.tzinfo is None:
+                sleeping_dt = sleeping_dt.replace(tzinfo=session.TZ)
+        except ValueError:
+            sleeping_dt = None
+    if sleeping_dt and session.now() < sleeping_dt:
+        stale = False   # 睡眠中：last_success 旧但进程在睡（心跳带唤醒时刻），不算停止
     return {"last_success": last, "note": obj.get("note", ""),
-            "stale": stale, "activities": act}
+            "stale": stale, "activities": act,
+            "sleeping_until": sleeping_dt.isoformat(timespec="seconds") if sleeping_dt else None}
 
 
 

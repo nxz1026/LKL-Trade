@@ -6,6 +6,7 @@
 - 固定顺序——先远端拉取，再选文件、校验、领取、执行。
 - 治理（产品7）：默认 dry 演练不得自动下单；急诊 halt 持久；风控护栏拦截。
 - v2 契约：results 行输出 action/code/ok/price/shares/order_id/reason。
+- 成交即入账本（循环内即时记账）：同 ref 同日多份文件同轮不重发（#11 回归）。
 """
 from __future__ import annotations
 
@@ -215,12 +216,15 @@ def process_once(for_date: str | None = None, executor=None) -> int:
                 if verdict == "done":
                     if ref not in done:
                         ledger.mark([ref])          # 人工 complete：按成交防重
+                        done.add(ref)
                     continue
                 if verdict == "retry":
                     intent.finish(ref)              # 人工 retry：唯一在途释放通道，清 pending 后放行重试
                     log.info("ref=%s 人工 retry，已清在途", ref)
                 if ref in done or any(_st(r["status"]).terminal
                                       for r in by_ref.get(ref, [])):
+                    if ref in done:
+                        log.warning("ref=%s 同日重复投递且已成交，跳过防重", ref)
                     continue
 
                 if intent.has(ref):
@@ -263,6 +267,8 @@ def process_once(for_date: str | None = None, executor=None) -> int:
                     intent.finish(ref)
                 elif res.confirmed:
                     intent.finish(ref)
+                    ledger.mark([ref])          # 循环内即时记账：同 ref 同日多文件不重发（#11）
+                    done.add(ref)
                     new_confirmed.append(ref)
                 elif bool(res.order_id):
                     file_settled = False
@@ -274,9 +280,6 @@ def process_once(for_date: str | None = None, executor=None) -> int:
                 archive_one(src)
                 if not _keep_remote():
                     remove_archived_name(src.name)
-
-        if new_confirmed:
-            ledger.mark(new_confirmed)
 
         if any_processed:                       # 全部已消费残留 → 无实质处理，不重写 results
             exchange.dump_results(for_date, attempts)

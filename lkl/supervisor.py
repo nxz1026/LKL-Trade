@@ -1,7 +1,9 @@
-"""调度：盘内执行当日决策；12:01-12:59/17:30-18:01 每分拉取；未来日留至次日执行。
+"""调度：盘内执行当日决策；09:00-10:00/12:58-13:00/17:30-18:01 窗口每分拉取；
+未来日留至次日执行；窗口外计算式睡眠（步长 ≤1h，不空转轮询）。
 
 主循环单轮失败必须**记录并继续**；写分级心跳
-（last_success + 各活动时间戳：拉取/下单/快照/账户），终端离线与凭证缺失会告警。
+（last_success + sleeping_until + 各活动时间戳：拉取/下单/快照/账户），
+终端离线与凭证缺失会告警。
 """
 from __future__ import annotations
 import json
@@ -24,8 +26,8 @@ def _now() -> str:
     return datetime.now(session.TZ).isoformat(timespec="seconds")
 
 
-def _heartbeat(activity: str = "", note: str = "") -> None:
-    """activity ∈ pull|order|snapshot|connect|account。写分级心跳。"""
+def _heartbeat(activity: str = "", note: str = "", sleeping: datetime | None = None) -> None:
+    """activity ∈ pull|order|snapshot|connect|account；sleeping=闭市睡眠的唤醒时刻。写分级心跳。"""
     try:
         hb = json.loads((config.trade_dir() / "heartbeat.json")
                         .read_text(encoding="utf-8")) if (config.trade_dir() / "heartbeat.json").exists() else {}
@@ -33,6 +35,10 @@ def _heartbeat(activity: str = "", note: str = "") -> None:
         hb = {}
     hb["last_success"] = _now()
     hb["note"] = note
+    if sleeping is not None:
+        hb["sleeping_until"] = sleeping.isoformat(timespec="seconds")
+    else:
+        hb.pop("sleeping_until", None)          # 醒来清除睡眠标记
     if activity:
         hb[f"last_{activity}"] = _now()
     try:
@@ -88,7 +94,8 @@ def run(argv: list[str]) -> int:
                     _OFFLINE_ALERTED["v"] = True
                 log.warning("终端/账户未就绪，%s秒后重试", _RETRY)
                 _heartbeat(note="账户未就绪")
-                time.sleep(_RETRY)
+                # 盘内必须 30s 快重试（要赶上下单）；盘外睡到下一窗口，不空转一整夜
+                time.sleep(_RETRY if session.is_open(dt) else schedule.sleep_sec(dt))
                 continue
             _OFFLINE_ALERTED["v"] = False
 
@@ -104,8 +111,10 @@ def run(argv: list[str]) -> int:
                 _heartbeat("pull", "已拉取")
                 time.sleep(_MIN)
             else:
-                _heartbeat()
-                time.sleep(_MIN)
+                # 闭市：睡到下一窗口起点（步长封顶 1h——每小时一醒保心跳/终端检测/午夜跨日归档）
+                wake = schedule.sleep_until(dt)
+                _heartbeat(note="休市睡眠", sleeping=wake)
+                time.sleep(schedule.sleep_sec(dt))
         except Exception as e:  # noqa: BLE001
             log.exception("调度单轮异常（存活继续）: %s", e)
             if isinstance(e, (ledger.LedgerCorruptError, intent.PendingCorruptError)):

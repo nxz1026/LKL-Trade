@@ -372,3 +372,25 @@ def test_archive_skips_future_dated_decision(env):
     assert not (fileio.directory() / "archive" / "2026-09-04" / future.name).exists()
     assert not archiver.is_archived(future.name)   # 执行日未到，不视为已消费
     assert (fileio.directory() / future.name).exists()  # 仍留待周一执行
+
+
+def test_same_ref_two_files_single_loop_executes_once(env):
+    """#11 回归：同 ref 两份决策文件在同一轮 process_once 内只下单一次。
+
+    修复前 ledger.mark 在循环结束后批量执行，后份文件的同 ref 决策会重复下单；
+    修复后 FILLED 即时入账本并更新 done 集合，后份自然跳过（仍归档清场）。
+    """
+    import json
+    from lkl.broker import fileio, ledger, tradeops
+    d = fileio.directory()
+    payload = {"schema": 2, "for_date": _today(),
+               "actions": [{"code": "601988", "action": "BUY"}]}
+    d.joinpath("decisions_20260904_091500.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    d.joinpath("decisions_20260904_093000.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    ex = FakeExecutor(_filled())
+    assert tradeops.process_once(executor=ex) == 1
+    assert len(ex.submits) == 1                 # 旧版此处 2 次（轮末才记账）
+    assert any("601988|BUY" in r for r in ledger.load())
+    assert _fileio().latest("decisions") is None  # 两份都已归档清场
