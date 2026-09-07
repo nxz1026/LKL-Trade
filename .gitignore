@@ -31,3 +31,4 @@ reports/*.html
 .secrets/
 logs/
 reports/
+config.env
