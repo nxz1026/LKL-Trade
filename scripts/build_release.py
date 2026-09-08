@@ -63,7 +63,8 @@ def sync_iss_version() -> None:
 
 def run(cmd: list[str]) -> None:
     print("+", " ".join(str(c) for c in cmd))
-    subprocess.run([str(c) for c in cmd], check=True, cwd=ROOT)
+    env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    subprocess.run([str(c) for c in cmd], check=True, cwd=ROOT, env=env)
 
 
 def main() -> int:

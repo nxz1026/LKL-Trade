@@ -53,6 +53,8 @@ jobs:
       - name: Build release
         if: steps.check.outputs.exists == 'false'
         shell: bash
+        env:
+          PYTHONUTF8: '1'
         run: python scripts/build_release.py --url https://github.com/${{ github.repository }}/releases/latest/download
       - name: Create GitHub Release
         if: steps.check.outputs.exists == 'false'
