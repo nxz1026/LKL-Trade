@@ -5,13 +5,18 @@
 风控：GM_RISK_MAX_QTY/GM_RISK_MAX_ORDERS/GM_RISK_MAX_CODES
 对账/追溯：GM_RECON_ORDERS(对账联券商委托)、GM_KEEP_REMOTE(1=归档后保留远端决策供审计)
 远端：GM_REMOTE_HOST/GM_REMOTE_KEY/GM_REMOTE_DIR(受限SFTP用户子目录)
+更新：GM_UPDATE_URL(version.json 目录) / GM_UPDATE_INTERVAL_HOURS(自动检查间隔,0=关) /
+      GM_UPDATE_AUTO(1=发现新版自动静默更新)
 模板见 .env.example，取值见 README。"""
 from __future__ import annotations
 import os
 import sys
 from pathlib import Path
 
-_DEFAULTS = {"GM_ENDPOINT": "127.0.0.1:7001", "TRADE_DIR": "~/trade"}
+from lkl.broker.version import __version__ as APP_VERSION
+
+_DEFAULTS = {"GM_ENDPOINT": "127.0.0.1:7001", "TRADE_DIR": "~/trade",
+             "GM_UPDATE_INTERVAL_HOURS": "6"}
 _REPO = Path(__file__).resolve().parents[2]
 
 
@@ -100,6 +105,25 @@ def holidays() -> tuple:
     """休市日集合（YYYY-MM-DD 逗号分隔，中英文逗号均可），来自 GM_HOLIDAYS 或 .secrets/gm.env。"""
     raw = _secret("GM_HOLIDAYS").replace("，", ",")
     return tuple(x.strip() for x in raw.split(",") if x.strip())
+
+
+def update_url() -> str:
+    """自动更新源：version.json 所在目录（http(s):// 或 file:// 本地测试用）。空=不检查。"""
+    return _secret("GM_UPDATE_URL")
+
+
+def update_interval_hours() -> int:
+    """自动检查更新间隔（小时）；0=关闭自动检查（仅菜单手动触发）。"""
+    raw = _secret("GM_UPDATE_INTERVAL_HOURS")
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 6
+
+
+def update_auto() -> bool:
+    """1=发现新版自动静默更新（交易时段自动延后）；0=仅气泡提示、菜单手动更新。"""
+    return _secret("GM_UPDATE_AUTO").strip() == "1"
 
 
 _RISK_KEYS = (("GM_RISK_MAX_QTY", "max_qty"),
@@ -193,6 +217,15 @@ GM_RECON_ORDERS=0
 GM_KEEP_REMOTE=0
 # 告警外部可达通知：逗号分隔 webhook URL（钉钉/企微/Server酱 等 JSON POST 兼容）
 GM_ALERT_WEBHOOK=
+
+# ---------- 自动更新 ----------
+# 更新源目录：放 version.json + 安装包（任意 http(s) 静态托管/GitHub Release 资产 URL 目录）；
+# 空=不检查更新。version.json 结构见 scripts/build_release.py 输出示例。
+GM_UPDATE_URL=
+# 自动检查间隔（小时，默认 6；0=关闭自动检查，仅托盘菜单手动触发）
+GM_UPDATE_INTERVAL_HOURS=6
+# 1=发现新版自动静默更新（交易时段自动延后）；0=仅气泡提示、菜单手动更新（默认）
+GM_UPDATE_AUTO=0
 
 # ---------- 受限 SFTP 交换（v2，无 shell） ----------
 # GM_REMOTE_DIR=你的用户子目录（如 user1）；绝对路径 / 含 .. 会拒绝；不填为纯本地

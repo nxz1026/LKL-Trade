@@ -1,7 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('E:/2026Workplace/Code/LKL-Trade/dashboard/trade_index.html', '.')]
+ROOT = Path(SPECPATH)   # spec 所在目录（仓库根）；相对路径打包，CI 任意检出目录可构建
+
+datas = [(str(ROOT / 'dashboard' / 'trade_index.html'), '.')]
 binaries = []
 hiddenimports = ['lkl.broker', 'lkl.supervisor', 'dashboard.trade_server']
 tmp_ret = collect_all('grpc')
@@ -13,7 +16,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['E:/2026Workplace/Code/LKL-Trade/lkl_boot.py'],
+    [str(ROOT / 'lkl_boot.py')],
     pathex=[],
     binaries=binaries,
     datas=datas,

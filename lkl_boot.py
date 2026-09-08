@@ -47,12 +47,38 @@ def _cmd_sup(argv: list[str]) -> int:
     from lkl.supervisor import run as s
     return s(argv)
 
-
 def _cmd_govern(argv: list[str]) -> int:
     from lkl.broker import governor
     action = argv[0] if argv else "status"
     reason = argv[1] if len(argv) > 1 else ""
     print(governor.run_cli(action, reason))
+    return 0
+
+
+def _cmd_update(argv: list[str]) -> int:
+    """update check：CLI 版更新检查（调试/无人值守机器用）。
+
+    完整更新闭环（下载→静默安装→重启托盘）在托盘菜单；CLI 只查不装。
+    """
+    from lkl.broker import config, updater
+    config.ensure_config()
+    url = config.update_url()
+    if not url:
+        print("未配置更新源：config.env 填 GM_UPDATE_URL 后重试", file=sys.stderr)
+        return 1
+    try:
+        info = updater.check(url, config.APP_VERSION)
+    except updater.UpdaterError as e:
+        print(f"检查更新失败：{e}", file=sys.stderr)
+        return 1
+    if info is None:
+        print(f"已是最新版本 v{config.APP_VERSION}")
+        return 0
+    print(f"发现新版本 v{info['version']}（当前 v{config.APP_VERSION}）")
+    print(f"安装包：{info['url']}")
+    if info.get("note"):
+        print(f"说明：{info['note']}")
+    print("更新请在托盘菜单点「立即更新」，或手动下载安装包。")
     return 0
 
 
@@ -75,7 +101,9 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_doctor()
         if cmd == "govern":
             return _cmd_govern(rest)
-        print(f"未知命令: {cmd}（可用 tray|sup|dash|health|doctor|govern）", file=sys.stderr)
+        if cmd == "update":
+            return _cmd_update(rest)
+        print(f"未知命令: {cmd}（可用 tray|sup|dash|health|doctor|govern|update）", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 0

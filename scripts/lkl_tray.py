@@ -17,6 +17,7 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -243,6 +244,8 @@ class Tray:
         self._cls_atom = None
         self._quit_ms = int(os.environ.get("LKL_TRAY_EXIT_MS", "0") or 0)
         self._started = time.monotonic()
+        self._latest = None          # 最新版本信息（发现新版后供菜单显示）
+        self._updating = False       # 更新流程防重入
 
     # ---- Win32 装配 ----
     def _register_class(self) -> None:
@@ -315,6 +318,11 @@ class Tray:
             ("-", False, None),
             ("打开看板", True, lambda: self._safe("打开看板", _open_web)),
             ("-", False, None),
+            ("检查更新…", True, lambda: self._safe("检查更新", lambda: self._check_update(True))),
+        ]
+        if self._latest:
+            acts.insert(5, (f"立即更新到 v{self._latest['version']}", True, lambda: self._apply_update()))
+        acts += [
             ("启动调度 sup", True, lambda: self._run("sup", "start")),
             ("启动看板 dash", True, lambda: self._run("dash", "start")),
             ("停止调度 sup", True, lambda: self._run("sup", "stop")),
@@ -371,6 +379,99 @@ class Tray:
         except Exception as e:
             self.notify(f"{label}失败：{e}")
 
+    # ---- 自动更新 ----
+    def _check_update(self, verbose: bool) -> None:
+        """拉 version.json 比对版本。verbose=True 手动检查（无更新/失败也提示）；
+        verbose=False 自动定时（静默，发现新版才提示）。"""
+        from lkl.broker import config, updater
+        url = config.update_url()
+        if not url:
+            if verbose:
+                self.notify("未配置更新源：config.env 填 GM_UPDATE_URL 后重试")
+            return
+        try:
+            info = updater.check(url, config.APP_VERSION)
+        except updater.UpdaterError as e:
+            if verbose:
+                self.notify(f"检查更新失败：{e}")
+            return
+        if info is None:
+            if verbose:
+                self.notify(f"已是最新版本 v{config.APP_VERSION}")
+            self._latest = None
+            return
+        self._latest = info
+        self.notify(f"发现新版本 v{info['version']}（当前 v{config.APP_VERSION}），右键菜单可更新")
+        if config.update_auto():
+            threading.Thread(target=self._apply_update, daemon=True).start()
+
+    def _apply_update(self) -> None:
+        """下载→校验→停服务→写 VBS 更新桩→spawn wscript→退出托盘。
+
+        安装器静默覆盖安装目录；VBS 在 %TEMP% 中不受文件锁影响，
+        等本托盘退出后执行安装并拉起新托盘。"""
+        from lkl.broker import config, session, updater
+        if self._updating:
+            return
+        self._updating = True
+        try:
+            url = config.update_url()
+            info = self._latest or (updater.check(url, config.APP_VERSION) if url else None)
+            if not info:
+                self.notify("暂无可用更新")
+                return
+            if config.update_auto() and session.market_open():
+                # 自动更新避开交易时段：盘中退出托盘会打断正在执行的下单
+                self.notify("交易时段，自动更新延后（收盘后再试）")
+                self._latest = None
+                return
+            dest = Path(tempfile.gettempdir()) / "lkl-update"
+            try:
+                self.notify(f"正在下载 v{info['version']}…")
+                setup = updater.download(info["url"], dest, sha256=info.get("sha256"))
+            except updater.UpdaterError as e:
+                self.notify(f"更新下载失败：{e}")
+                self._latest = None
+                return
+            _mgr.stop_all()                    # 停掉安装目录内的 sup/dash，避免文件占用
+            self.notify("下载完成，正在静默安装（托盘将重启）…")
+            tray_cmd = f'"{_SELF}" tray' if _SELF else ""
+            vbs = updater.write_vbs(setup, os.getpid(), tray_cmd, dest)
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(["wscript.exe", str(vbs)], creationflags=flags)
+            user32.PostMessageW(self.hwnd, _WM_DESTROY, 0, 0)   # 退出托盘 → VBS 接管
+        except Exception:
+            self._log_err()
+            self._latest = None
+        finally:
+            self._updating = False
+
+    def _auto_check_loop(self) -> None:
+        """后台定时检查（GM_UPDATE_INTERVAL_HOURS 小时，0=关闭）。"""
+        from lkl.broker import config
+        interval = config.update_interval_hours()
+        if interval <= 0:
+            return
+        time.sleep(20)          # 等托盘与服务先起来
+        while True:
+            try:
+                self._check_update(verbose=False)
+            except Exception:
+                pass
+            time.sleep(interval * 3600)
+
+    def _last_result_notice(self) -> None:
+        """启动时提示上次自动更新结果（安装器退出码非 0 即失败）。"""
+        f = Path(tempfile.gettempdir()) / "lkl-update" / "last_result.txt"
+        try:
+            if f.exists():
+                rc = f.read_text(encoding="utf-8").strip()
+                f.unlink(missing_ok=True)
+                if rc != "0":
+                    self.notify(f"上次自动更新未完成（安装器退出码 {rc}），请手动更新或查安装日志")
+        except OSError:
+            pass
+
     def _exit(self) -> None:
         _mgr.stop_all()
         user32.PostMessageW(self.hwnd, _WM_DESTROY, 0, 0)
@@ -409,6 +510,8 @@ class Tray:
         self._create_window()
         self._add_icon()
         threading.Thread(target=self._autostart, daemon=True).start()
+        threading.Thread(target=self._auto_check_loop, daemon=True).start()
+        threading.Thread(target=self._last_result_notice, daemon=True).start()
         msg = wt.MSG()
         _WM_QUIT = 0x0012
         while True:

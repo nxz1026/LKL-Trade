@@ -68,6 +68,34 @@ uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编�
 | `GM_KEEP_REMOTE` | 0 | 0(默认)=已执行决策**先归档本地再删远端**(for_date 守卫)；1=保留远端原文件作审计追溯 |
 | `GM_ALERT_WEBHOOK` | — | 告警可达通知：逗号分隔 webhook URL（钉钉/企微/Server酱 兼容 JSON POST）；CRIT/WARN 自动推送 |
 | `GM_REMOTE_HOST/KEY/DIR` | — | 受限 SFTP 同步（v2）；`DIR`=你的用户子目录（如 `user1`），禁 `..`/绝对路径 |
+| `GM_UPDATE_URL` | — | 自动更新源：version.json 所在目录（http(s) 或 file:// 测试）；空=不检查 |
+| `GM_UPDATE_INTERVAL_HOURS` | 6 | 自动检查更新间隔（小时）；0=仅菜单手动检查 |
+| `GM_UPDATE_AUTO` | 0 | 1=发现新版自动静默更新（交易时段自动延后）；0=仅气泡提示、手动更新 |
+
+## 自动更新（Windows 托盘闭环，安装包 <20MB 场景）
+
+安装版托盘（`lkl_tray.exe`）启动后定时（默认 6h，可配）拉 `GM_UPDATE_URL/version.json`
+比对版本：有新版→气泡提示 + 菜单「立即更新到 vX.Y.Z」；下载→sha256 校验→停掉 sup/dash
+（避免文件占用）→ 生成 `%TEMP%\lkl-update\lkl-update.vbs` 更新桩 → 托盘退出 →
+VBS 等托盘进程消失后**静默安装**（`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART`，免管理员）→
+自动拉起新托盘并恢复服务。`GM_UPDATE_AUTO=1` 时发现新版自动执行（**避开交易时段**，盘中延后）；
+安装器退出码非 0 会在下次启动托盘时气泡提示（`last_result.txt`）。
+
+**发布新版本（开发机）**：
+
+```bash
+python scripts/build_release.py --url https://github.com/<you>/LKL-Trade/releases/latest/download
+# 或 --url 任意静态 HTTP 托管目录；不带 --url 则 version.json 的 url 填相对文件名（与 version.json 同目录）
+```
+
+产物：`installer/LKL-Trade-Setup-<版本>.exe`（版本单一来源 `lkl/broker/version.py`，
+`installer.iss` 的 `MyAppVersion` 由脚本自动同步）+ `installer/version.json`。
+上传这两个文件到更新源目录即可（GitHub 用户传成 Release 资产，version.json 的 url 指向资产直链）。
+版本号只需改 `lkl/broker/version.py` 一处。
+
+**version.json 结构**：`{"version": "1.1.0", "url": "LKL-Trade-Setup-1.1.0.exe", "sha256": "<64位hex>", "note": "更新说明"}`
+
+CLI 调试：`lkl_boot.exe update check`（只查不装；托盘菜单完成闭环）。
 
 ## 用法（`.venv-trade/Scripts/python -m lkl.main …`）
 

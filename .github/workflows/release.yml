@@ -1,0 +1,34 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[trade]' pyinstaller
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build release
+        shell: bash
+        run: python scripts/build_release.py --url https://github.com/nxz1026/LKL-Trade/releases/latest/download
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/*.exe
+            installer/version.json
+          generate_release_notes: true
+          fail_on_unmatched_files: true
