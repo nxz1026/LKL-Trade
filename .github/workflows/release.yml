@@ -1,32 +1,63 @@
 name: release
 
+# push main 自动发版：读 version.py 版本号，对应 Release 不存在才构建发布。
+# 开发者流程：改 lkl/broker/version.py → git push → 自动编译 + 打 tag + 发 Release。
+# 版本号没变 = 中间态提交，跳过发布（避免废版）；想发新版必须递增 version.py。
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:        # 手动重跑（构建失败修复后补发）
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false   # 连续 push 排队串行，避免并发发版竞态
+
 jobs:
-  build:
+  release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: Read version
+        id: ver
+        shell: bash
+        run: |
+          ver=$(python -c "import re; t=open('lkl/broker/version.py', encoding='utf-8').read(); print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', t).group(1))")
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+      - name: Skip if release exists
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.ver }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.ver.outputs.ver }} 已发布，跳过"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install deps
+        if: steps.check.outputs.exists == 'false'
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[trade]' pyinstaller
       - name: Install Inno Setup
+        if: steps.check.outputs.exists == 'false'
         run: choco install innosetup -y --no-progress
       - name: Build release
+        if: steps.check.outputs.exists == 'false'
         shell: bash
-        run: python scripts/build_release.py --url https://github.com/nxz1026/LKL-Trade/releases/latest/download
+        run: python scripts/build_release.py --url https://github.com/${{ github.repository }}/releases/latest/download
       - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.ver }}
           files: |
             installer/*.exe
             installer/version.json

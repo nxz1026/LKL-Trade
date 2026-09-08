@@ -81,17 +81,30 @@ VBS 等托盘进程消失后**静默安装**（`/VERYSILENT /SUPPRESSMSGBOXES /N
 自动拉起新托盘并恢复服务。`GM_UPDATE_AUTO=1` 时发现新版自动执行（**避开交易时段**，盘中延后）；
 安装器退出码非 0 会在下次启动托盘时气泡提示（`last_result.txt`）。
 
-**发布新版本（开发机）**：
+**发布新版本（推荐：push 即发版）**：
+
+```bash
+# 1) 改版本号（唯一来源）
+#    lkl/broker/version.py 的 __version__ = "1.1.0"
+# 2) push 到 main
+git add lkl/broker/version.py && git commit -m "feat: v1.1.0" && git push
+```
+
+`.github/workflows/release.yml` 自动：读 `version.py` 版本号 → 该版本 Release 不存在则
+PyInstaller 打包 + Inno Setup 装器 + sha256 → 打 tag `vX.Y.Z` + 发 GitHub Release
+（安装包与 `version.json` 为资产）。**版本号没变的提交直接跳过发布**（避免中间态废版）；
+想要新的可下载版本，必须递增 `version.py`。客户端 `GM_UPDATE_URL` 指向
+`https://github.com/nxz1026/LKL-Trade/releases/latest/download`，发布后下次检查即提示更新。
+
+**手动构建（非 GitHub 用户/本地调试）**：
 
 ```bash
 python scripts/build_release.py --url https://github.com/<you>/LKL-Trade/releases/latest/download
 # 或 --url 任意静态 HTTP 托管目录；不带 --url 则 version.json 的 url 填相对文件名（与 version.json 同目录）
 ```
 
-产物：`installer/LKL-Trade-Setup-<版本>.exe`（版本单一来源 `lkl/broker/version.py`，
-`installer.iss` 的 `MyAppVersion` 由脚本自动同步）+ `installer/version.json`。
-上传这两个文件到更新源目录即可（GitHub 用户传成 Release 资产，version.json 的 url 指向资产直链）。
-版本号只需改 `lkl/broker/version.py` 一处。
+产物：`installer/LKL-Trade-Setup-<版本>.exe` + `installer/version.json`，上传到更新源目录即可。
+`installer.iss` 的 `MyAppVersion` 由脚本自动同步，只改 `version.py` 一处。
 
 **version.json 结构**：`{"version": "1.1.0", "url": "LKL-Trade-Setup-1.1.0.exe", "sha256": "<64位hex>", "note": "更新说明"}`
 
