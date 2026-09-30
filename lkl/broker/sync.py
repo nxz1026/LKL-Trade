@@ -4,7 +4,7 @@ v2 契约：行含 code(无前缀)/symbol/volume/available/cost/price(=最新价
 """
 from __future__ import annotations
 
-from lkl.broker import client, holdings, manual_orders, queries, remote
+from lkl.broker import client, config, holdings, manual_orders, queries, remote
 
 
 def _row(p) -> dict:
@@ -20,7 +20,9 @@ def snapshot() -> int:
     client.connect()
     rows = [_row(p) for p in queries.positions()]
     holdings.dump(rows)
-    remote.push("holdings")
+    # HTTP mode: holdings push not yet implemented (oracle manages its own state)
+    if not config.remote_url():
+        remote.push("holdings")
     n_orders = 0
     try:
         n_orders = manual_orders.fetch()

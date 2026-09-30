@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from lkl.broker import alerts, config, exchange, fileio, governor, intent, ledger, remote, resolve, session, trade_date
+from lkl.broker import alerts, config, exchange, fileio, governor, intent, ledger, remote, remote_http, resolve, session, trade_date
 from lkl.broker.archiver import archive_one, is_archived
 from lkl.broker.cleanup import remove_archived, remove_archived_name
 from lkl.broker.lock import single_executor
@@ -162,15 +162,167 @@ def _consumed_archived(src) -> bool:
 
 
 def process_once(for_date: str | None = None, executor=None) -> int:
-    """去重执行当日全部决策文件；返回本轮新确认成交条数。
+    """去重执行当日全部决策；返回本轮新确认成交条数。
 
-    顺序保证：一次拉取远端**全部** decisions，按文件名时间**升序**（旧→新）逐份
-    处理——同一 code 的多份决策严格按投递顺序执行（先 BUY 后 SELL，绝不倒序）。
-    每份文件独立结算：该份全部 settle → 归档本地 + 删远端；未 settle（在途/重试/
-    风控）→ 保留待下轮。results 跨文件累积，轮末一次落盘。
+    HTTP mode (GM_REMOTE_URL set): pull decisions from oracle Trade API,
+    check batch_id for idempotency, push results back via HTTP.
+    SFTP mode (legacy): pull decision files from SFTP, process, push results.
     """
     for_date = for_date or trade_date.trade_date()
     executor = executor or _executor()
+
+    # ── HTTP mode ────────────────────────────────────────────
+    if config.remote_url():
+        return _process_once_http(for_date, executor)
+
+    # ── SFTP mode (legacy) ──────────────────────────────────
+    return _process_once_sftp(for_date, executor)
+
+
+def _process_once_http(for_date: str, executor) -> int:
+    """HTTP mode: pull decisions from oracle Trade API, process, push results."""
+    try:
+        data = remote_http.http_pull_decisions(for_date)
+    except Exception as e:
+        log.warning("HTTP pull decisions failed: %s", e)
+        return 0
+
+    batch_id = data.get("batch_id", "")
+    actions = data.get("actions", [])
+
+    if not actions:
+        return 0
+
+    # Idempotency: skip if this batch was already processed
+    if remote_http.is_processed(batch_id):
+        log.info("batch %s already processed, skipping", batch_id)
+        return 0
+
+    with single_executor():
+        try:
+            ledger.load()
+            intent.load()
+        except (ledger.LedgerCorruptError, intent.PendingCorruptError):
+            raise
+
+        ok, why = governor.allow_trade()
+        if not ok:
+            log.info("治理门禁：%s（%s）", why, for_date)
+            return 0
+
+        _reconcile(executor)
+
+        attempts = exchange.load_results(for_date)
+        by_ref: dict[str, list] = {}
+        for r in attempts:
+            by_ref.setdefault(r["ref"], []).append(r)
+        codes_today = {r.get("code") for r in attempts}
+
+        done = ledger.load()
+        new_confirmed: list[str] = []
+        verdicts = resolve.load()
+
+        # Convert HTTP actions to Signal objects
+        from datetime import date as date_type
+        target_date = date_type.fromisoformat(for_date)
+        signals = []
+        for a in actions:
+            signals.append(Signal(
+                confirm_date=target_date,
+                code=a["code"],
+                action=a["action"],
+                reason=a.get("reason", ""),
+                buy_window=a.get("window", ""),
+                exec_=a.get("exec", "OPEN_POS"),
+                volume=a.get("volume", 100),
+            ))
+
+        file_settled = True
+        for sig in signals:
+            ref = _ref(sig)
+            verdict = resolve.apply(verdicts, ref)
+            if verdict == "skip":
+                continue
+            if verdict == "done":
+                if ref not in done:
+                    ledger.mark([ref])
+                    done.add(ref)
+                continue
+            if verdict == "retry":
+                intent.finish(ref)
+                log.info("ref=%s 人工 retry，已清在途", ref)
+            if ref in done or any(_st(r["status"]).terminal
+                                  for r in by_ref.get(ref, [])):
+                if ref in done:
+                    log.warning("ref=%s 已成交，跳过防重", ref)
+                continue
+
+            if intent.has(ref):
+                log.info("ref=%s 已在途，本轮不重下", ref)
+                file_settled = False
+                continue
+            retried = [r for r in by_ref.get(ref, []) if _st(r["status"]).retryable]
+            if len(retried) >= MAX_ATTEMPTS:
+                log.warning("ref=%s 达 %d 次仍不成，留待人工", ref, MAX_ATTEMPTS)
+                file_settled = False
+                continue
+
+            filled_total = sum(r.get("filled", 0) for r in by_ref.get(ref, []))
+            want = _remaining_wanted(sig, filled_total)
+            if want <= 0 and sig.action == "BUY":
+                file_settled = False
+                continue
+
+            if sig.action == "BUY":
+                blocked, why = governor.risk_block(want, len(attempts), len(codes_today))
+                if blocked:
+                    log.warning("风控阻断 %s: %s", ref, why)
+                    alerts.emit("WARN", f"风控拦截 {sig.code}: {why}")
+                    file_settled = False
+                    continue
+
+            intent.record(ref, qty=want)
+            try:
+                res = executor.submit(sig, volume=want)
+            except Exception as e:
+                intent.finish(ref)
+                log.error("下单异常 ref=%s: %s", ref, e)
+                file_settled = False
+                continue
+            intent.record(ref, order_id=res.order_id, status=res.status.value, qty=want)
+
+            row = _row(sig, res, sig.reason)
+            attempts.append(row)
+            if res.status is OrderStatus.EXCLUDED or res.status is OrderStatus.CANCELLED:
+                intent.finish(ref)
+            elif res.confirmed:
+                intent.finish(ref)
+                ledger.mark([ref])
+                done.add(ref)
+                new_confirmed.append(ref)
+            elif bool(res.order_id):
+                file_settled = False
+            else:
+                intent.finish(ref)
+                file_settled = False
+
+        # Write local results and push via HTTP
+        exchange.dump_results(for_date, attempts)
+        try:
+            remote_http.http_push_results({
+                "batch_id": batch_id,
+                "for_date": for_date,
+                "trades": attempts,
+            })
+            remote_http.mark_processed(batch_id)
+        except Exception as e:
+            log.warning("HTTP push results failed: %s", e)
+
+    return len(new_confirmed)
+
+
+def _process_once_sftp(for_date: str, executor) -> int:
+    """SFTP mode (legacy): pull decision files from SFTP, process, push results."""
     with single_executor():
         remote.pull_all("decisions")
         srcs = exchange.decision_files(for_date)

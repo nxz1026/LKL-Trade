@@ -4,7 +4,7 @@
 时段：GM_HOLIDAYS(休市日补充)
 风控：GM_RISK_MAX_QTY/GM_RISK_MAX_ORDERS/GM_RISK_MAX_CODES
 对账/追溯：GM_RECON_ORDERS(对账联券商委托)、GM_KEEP_REMOTE(1=归档后保留远端决策供审计)
-远端：GM_REMOTE_HOST/GM_REMOTE_KEY/GM_REMOTE_DIR(受限SFTP用户子目录)
+远端：GM_REMOTE_HOST/GM_REMOTE_KEY/GM_REMOTE_DIR(受限SFTP用户子目录) / GM_REMOTE_URL(HTTP Trade API)
 更新：GM_UPDATE_URL(version.json 目录) / GM_UPDATE_INTERVAL_HOURS(自动检查间隔,0=关) /
       GM_UPDATE_AUTO(1=发现新版自动静默更新)
 模板见 .env.example，取值见 README。"""
@@ -99,6 +99,11 @@ def remote_key() -> Path:
 
 def remote_dir() -> str:
     return _secret("GM_REMOTE_DIR")
+
+
+def remote_url() -> str:
+    """Trade API base URL for HTTP mode (e.g., https://oracle/trade). Empty=SFTP mode."""
+    return _secret("GM_REMOTE_URL")
 
 
 def holidays() -> tuple:
@@ -229,6 +234,8 @@ GM_UPDATE_AUTO=0
 
 # ---------- 受限 SFTP 交换（v2，无 shell） ----------
 # GM_REMOTE_DIR=你的用户子目录（如 user1）；绝对路径 / 含 .. 会拒绝；不填为纯本地
+# 远端交换模式：SFTP（默认）或 HTTP Trade API
+# GM_REMOTE_URL=https://oracle/trade  ← HTTP 模式（优先于 SFTP）
 GM_REMOTE_HOST=
 GM_REMOTE_KEY=~/.ssh/DJ.pem
 GM_REMOTE_DIR=user1

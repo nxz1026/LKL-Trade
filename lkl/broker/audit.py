@@ -1,7 +1,7 @@
-"""交易三文件一致性核对：decisions/results/holdings 日期 + 成交覆盖率。"""
+"""交易三文件一致性核对：decisions/results/holdings 日期 + 成交覆盖率."""
 from __future__ import annotations
 
-from lkl.broker import fileio, ledger, remote, trade_date
+from lkl.broker import config, fileio, ledger, remote, trade_date
 
 
 def _label(when: str | None, today: str) -> str:
@@ -12,7 +12,9 @@ def _label(when: str | None, today: str) -> str:
 
 def run() -> int:
     """打印三文件日期与今日(Shanghai)比对 + 决策成交覆盖率。"""
-    remote.pull("decisions")
+    # SFTP mode: pull decisions from remote
+    if not config.remote_url():
+        remote.pull("decisions")
     today = trade_date.trade_date()
     d = fileio.read("decisions")
     r = fileio.read("results")

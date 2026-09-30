@@ -11,7 +11,7 @@ import logging
 import time
 from datetime import datetime
 
-from lkl.broker import alerts, config, fileio, gate, governor, intent, ledger, remote, schedule, session
+from lkl.broker import alerts, config, fileio, gate, governor, intent, ledger, remote, remote_http, schedule, session
 from lkl.broker.archiver import pack
 from lkl.broker.cleanup import remove_archived
 from lkl.broker.sync import snapshot
@@ -107,8 +107,12 @@ def run(argv: list[str]) -> int:
                 _heartbeat()
                 time.sleep(min(_MIN, interval))
             elif schedule.in_read_window(dt):
-                remote.pull("decisions")
-                _heartbeat("pull", "已拉取")
+                # HTTP mode: decisions are pulled in process_once(), skip warm-up
+                if not config.remote_url():
+                    remote.pull("decisions")
+                    _heartbeat("pull", "已拉取")
+                else:
+                    _heartbeat("pull", "HTTP 模式：决策在盘中拉取")
                 time.sleep(_MIN)
             else:
                 # 闭市：睡到下一窗口起点（步长封顶 1h——每小时一醒保心跳/终端检测/午夜跨日归档）

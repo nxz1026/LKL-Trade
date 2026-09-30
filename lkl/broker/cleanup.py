@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from lkl.broker import fileio, remote
+from lkl.broker import config, fileio, remote
 from lkl.broker.archiver import day_from_name
 
 log = logging.getLogger("lkl.cleanup")
@@ -27,8 +27,11 @@ def _for_date_from_name(name: str) -> str:
 
 
 def remove_archived_name(name: str) -> int:
-    """按具体文件名删除远端决策 + 本地同名残留；返回 0/1。"""
+    """按具体文件名删除远端决策 + 本地同名残留；返回 0/1."""
     if not remote.enabled():
+        return 0
+    # HTTP mode: no SFTP files to clean up (oracle manages its own state)
+    if config.remote_url():
         return 0
     remote.rm(name)
     log.info("已删除远端已消费决策 %s", name)
@@ -40,8 +43,11 @@ def remove_archived_name(name: str) -> int:
 
 
 def remove_archived(day: str) -> int:
-    """远端最新 decisions 的 for_date 恰为 day 才删；返回删除数 0/1（兼容旧调用）。"""
+    """远端最新 decisions 的 for_date 恰为 day 才删；返回删除数 0/1（兼容旧调用）."""
     if not remote.enabled():
+        return 0
+    # HTTP mode: no SFTP files to clean up (oracle manages its own state)
+    if config.remote_url():
         return 0
     base = remote.newest("decisions")
     if not base:

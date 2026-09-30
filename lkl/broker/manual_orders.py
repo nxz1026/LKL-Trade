@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from lkl.broker import fileio, remote, session, trade_date
+from lkl.broker import config, fileio, remote, session, trade_date
 from lkl.broker.status import list_orders
 
 log = logging.getLogger("lkl.manual_orders")
@@ -101,7 +101,7 @@ def fetch() -> int:
                  {"schema": _SCHEMA, "for_date": day,
                   "generated_at": _now_iso(), "orders": rows})
     try:
-        if remote.enabled():
+        if remote.enabled() and not config.remote_url():
             remote.push("manual_orders")
     except Exception as e:  # noqa: BLE001
         log.warning("manual_orders push 失败: %s", e)
