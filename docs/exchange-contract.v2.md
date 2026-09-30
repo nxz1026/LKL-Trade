@@ -110,3 +110,5 @@
 - 文件名无毫秒后缀（秒级）。
 - 传输改为**受限 SFTP**（无 shell），各用户目录 `trade/userN/` 隔离。
 - `status` 字段新增并在看板使用，DB 侧不需要，忽略即可。
+- **HTTP 模式（v2.1+）**：决策和结果可通过 HTTP API 传输（见 `docs/trade-api-protocol.md`），
+  配置 `GM_REMOTE_URL` 后自动启用；holdings 和 manual_orders 仍走 SFTP。

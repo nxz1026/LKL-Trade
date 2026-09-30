@@ -7,6 +7,24 @@
 
 ## 架构与数据流
 
+### HTTP 模式（推荐，v2.1+）
+
+```
+DB策略端(独立仓)                     Oracle (140.83.62.161)              LKL-Trade（本仓，只交易）
+  strategy_signal 表                      trade_api.py
+      │                                       │
+      ▼                                       ▼
+  gen_decisions.py ──▶ decisions_*.json ──▶ /trade/decisions ──── HTTP GET ────  pull 决策
+                                          ◀── /trade/results  ──── HTTP POST ───  回传结果
+                                          ◀── SFTP pull ────────────────────────  拉取 holdings/manual_orders
+```
+
+- 配置 `GM_REMOTE_URL=https://140.83.62.161/trade` 启用 HTTP 模式
+- 决策和结果通过 HTTP API 传输，holdings/manual_orders 仍用 SFTP
+- 去重简化为 batch_id 追踪（`processed_batches.json`）
+
+### SFTP 模式（兼容，v2）
+
 ```
 DB策略端(独立仓)                     LKL-Trade（本仓，只交易）
   EOD 出决策  decisions.json ──同步──▶  trade check / watch / sup
@@ -68,6 +86,8 @@ uv pip install --python .venv-trade/Scripts/python.exe -e '.[trade]'   # 可编�
 | `GM_KEEP_REMOTE` | 0 | 0(默认)=已执行决策**先归档本地再删远端**(for_date 守卫)；1=保留远端原文件作审计追溯 |
 | `GM_ALERT_WEBHOOK` | — | 告警可达通知：逗号分隔 webhook URL（钉钉/企微/Server酱 兼容 JSON POST）；CRIT/WARN 自动推送 |
 | `GM_REMOTE_HOST/KEY/DIR` | — | 受限 SFTP 同步（v2）；`DIR`=你的用户子目录（如 `user1`），禁 `..`/绝对路径 |
+| `GM_REMOTE_URL` | — | HTTP 模式交换地址（v2.1+）；设置后决策/结果走 HTTP API，holdings/委托仍走 SFTP。例：`https://140.83.62.161/trade` |
+| `GM_SSL_VERIFY` | `false` | HTTP 模式 SSL 验证（自签证书场景默认关闭） |
 | `GM_UPDATE_URL` | — | 自动更新源：version.json 所在目录（http(s) 或 file:// 测试）；空=不检查 |
 | `GM_UPDATE_INTERVAL_HOURS` | 6 | 自动检查更新间隔（小时）；0=仅菜单手动检查 |
 | `GM_UPDATE_AUTO` | 0 | 1=发现新版自动静默更新（交易时段自动延后）；0=仅气泡提示、手动更新 |
@@ -178,7 +198,7 @@ lkl/
   services/  BrokerExecutor（gmtrade 实单）
   dashboard/ 标准库 HTML 看板（账户+持仓汇总/决策/回报/手动·自动委托视图/对账/告警/治理+风控面板/doctor 自检/倒计时）
 tests/       pytest 故障注入与契约测试
-docs/        exchange-contract.v2.md(字段契约) · TESTING.md(测试步骤) · DB-CONFIRM.md(联调确认清单)
+docs/        exchange-contract.v2.md(字段契约) · trade-api-protocol.md(HTTP API 协议) · TESTING.md(测试步骤) · DB-CONFIRM.md(联调确认清单)
 ```
 
 只做交易；无策略、无 DB。
