@@ -4,8 +4,13 @@
 
 ## 概述
 
-HTTP 模式通过 Oracle 端的 `trade_api.py` Flask 服务实现决策拉取和结果回传，
-替代原有的 SFTP 文件传输方式。holdings 和 manual_orders 仍通过 SFTP 传输。
+HTTP 模式通过 Oracle 端的 **emotion-core presentation 层**（Python 标准库 `http.server`）实现决策拉取和结果回传，替代原有的 SFTP 文件传输方式。holdings 和 manual_orders 仍通过 SFTP 传输。
+
+**服务端架构：**
+- emotion-core `presentation/server.py` — 路由注册 + 请求分发
+- emotion-core `presentation/trade_api.py` — Trade API handler 模块
+- nginx `/trade/` 反代到 `http://127.0.0.1:8098/api/trade/`
+- 决策生成：`strategy_signal` 表 → `gen_decisions.py` → Trade API handler
 
 ## 启用方式
 
@@ -39,13 +44,14 @@ GM_SSL_VERIFY=false
       "action": "BUY",
       "code": "000504",
       "volume": 100,
+      "exec": "OPEN_POS",
       "reason": "ma_golden_cross score=78"
     }
   ]
 }
 ```
 
-**响应 204：** 当日无决策
+**空决策：** 当日无 BUY 信号时返回 200 + 空 `actions` 数组。
 
 - `batch_id` 是全局唯一标识（UUID），客户端用于幂等追踪
 - 同日期多次拉取返回相同 `batch_id`（决策未刷新时）
@@ -58,34 +64,42 @@ GM_SSL_VERIFY=false
 **请求体：**
 ```json
 {
+  "batch_id": "1a0960df-77c4-4aa2-8b4c-5891a2ecaeeb",
   "for_date": "2026-09-30",
   "trades": [
     {
+      "ref": "2026-09-30|000504|BUY",
       "action": "BUY",
       "code": "000504",
       "ok": false,
       "price": 0,
       "shares": 0,
       "order_id": "",
-      "reason": "非交易日或不在盘中时段，暂停自动下单"
+      "status": "REJECTED",
+      "status_label": "已拒绝",
+      "reason": "非交易日或不在盘中时段，暂停自动下单",
+      "note": "ma_golden_cross score=78",
+      "traded_at": "2026-09-30T13:35:25"
     }
   ]
 }
 ```
 
-**响应 200：**
+**响应 200（首次提交）：**
 ```json
-{
-  "ok": true,
-  "written": "results_2026-09-30_20260930_131428.json"
-}
+{"status": "ok", "batch_id": "1a0960df-77c4-4aa2-8b4c-5891a2ecaeeb"}
 ```
 
-**响应 400：** 请求体格式错误
+**响应 200（重复提交，幂等）：**
+```json
+{"status": "ok", "batch_id": "1a0960df-77c4-4aa2-8b4c-5891a2ecaeeb", "note": "idempotent"}
+```
 
-- 结果写入 Oracle `~/trade/results_{date}_{timestamp}.json`
+**响应 400：** JSON 解析失败（`{"error": "invalid JSON: ..."}`）
+
+- 结果写入 Oracle `~/trade/results_{for_date}_{timestamp}.json`
 - 对应 `batch_id` 标记为已处理（幂等）
-- 重复 POST 同一 `batch_id` 返回 `{"ok": true, "duplicate": true}`
+- 重复 POST 同一 `batch_id` 返回 `note: "idempotent"`，不产生新结果文件
 
 ### GET /results?date=YYYY-MM-DD
 
@@ -108,7 +122,7 @@ GM_SSL_VERIFY=false
 
 **响应 200：**
 ```json
-{"ok": true, "service": "trade_api"}
+{"ok": true, "service": "emotion_core_trade_api"}
 ```
 
 ## 幂等保证
@@ -137,8 +151,7 @@ GM_SSL_VERIFY=false
 | HTTP 状态码 | 含义 | 客户端行为 |
 |---|---|---|
 | 200 | 成功 | 正常处理 |
-| 204 | 无决策 | 跳过，等待下次轮询 |
-| 400 | 请求格式错误 | 告警，不重试 |
+| 400 | JSON 格式错误 | 告警，不重试 |
 | 404 | 无结果 | 跳过 |
 | 500 | 服务端错误 | 告警，下次轮询重试 |
 | 网络不可达 | 连接失败 | 告警，回退等待 |
@@ -147,19 +160,22 @@ GM_SSL_VERIFY=false
 
 ```nginx
 location /trade/ {
-    proxy_pass http://127.0.0.1:8032/;
+    proxy_pass http://127.0.0.1:8098/api/trade/;
+    proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    proxy_read_timeout 30s;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 64k;
 }
 ```
 
 客户端访问 `https://140.83.62.161/trade/decisions?date=...`
-等价于 `http://127.0.0.1:8032/decisions?date=...`。
+等价于 `http://127.0.0.1:8098/api/trade/decisions?date=...`。
 
 ## 安全
 
 - HTTPS 加密传输（nginx SSL 终端）
 - 自签证书场景客户端设置 `GM_SSL_VERIFY=false`
 - 服务端绑定 127.0.0.1，仅 nginx 反代暴露
-- 无认证头（内网/VPN 场景），如需认证可加 `X-Bridge-Token`
+- `client_max_body_size 64k` 限制请求体大小

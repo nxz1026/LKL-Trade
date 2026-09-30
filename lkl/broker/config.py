@@ -235,7 +235,7 @@ GM_UPDATE_AUTO=0
 # ---------- 受限 SFTP 交换（v2，无 shell） ----------
 # GM_REMOTE_DIR=你的用户子目录（如 user1）；绝对路径 / 含 .. 会拒绝；不填为纯本地
 # 远端交换模式：SFTP（默认）或 HTTP Trade API
-# GM_REMOTE_URL=https://oracle/trade  ← HTTP 模式（优先于 SFTP）
+# GM_REMOTE_URL=https://140.83.62.161/trade  ← HTTP 模式（优先于 SFTP）
 GM_REMOTE_HOST=
 GM_REMOTE_KEY=~/.ssh/DJ.pem
 GM_REMOTE_DIR=user1

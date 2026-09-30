@@ -11,11 +11,11 @@
 
 ```
 DB策略端(独立仓)                     Oracle (140.83.62.161)              LKL-Trade（本仓，只交易）
-  strategy_signal 表                      trade_api.py
+  strategy_signal 表                      emotion_core presentation/server.py
       │                                       │
       ▼                                       ▼
-  gen_decisions.py ──▶ decisions_*.json ──▶ /trade/decisions ──── HTTP GET ────  pull 决策
-                                          ◀── /trade/results  ──── HTTP POST ───  回传结果
+  gen_decisions.py ──▶ emotion_core /api/trade/decisions ──── HTTP GET ────  pull 决策
+                                          ◀── emotion_core /api/trade/results ── HTTP POST ───  回传结果
                                           ◀── SFTP pull ────────────────────────  拉取 holdings/manual_orders
 ```
 

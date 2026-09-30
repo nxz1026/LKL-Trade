@@ -1,10 +1,14 @@
-"""HTTP-based remote exchange for LKL-Trade (oracle Trade API).
+"""HTTP-based remote exchange for LKL-Trade (oracle emotion-core Trade API).
 
 Replaces SFTP file-based exchange with simple HTTP calls.
 When GM_REMOTE_URL is set, uses HTTP mode; otherwise falls back to SFTP.
 
 Batch tracking: processed_batches.json records which batch_ids have been
 processed, providing simple idempotent deduplication.
+
+Server: emotion-core presentation layer (Python standard library http.server)
+- nginx at /trade/ proxies to emotion-core :8098/api/trade/
+- Decisions generated from strategy_signal table via gen_decisions.py
 """
 from __future__ import annotations
 
@@ -55,7 +59,7 @@ def mark_processed(batch_id: str):
 
 # ── HTTP API calls ───────────────────────────────────────────
 def _api_url() -> str:
-    """Get the Trade API base URL."""
+    """Get the Trade API base URL (e.g., https://140.83.62.161/trade)."""
     url = config.remote_url().rstrip("/")
     if not url:
         raise RemoteError("GM_REMOTE_URL not configured")
@@ -63,7 +67,11 @@ def _api_url() -> str:
 
 
 def http_pull_decisions(for_date: str | None = None) -> dict:
-    """Pull decisions from oracle HTTP API. Returns dict with batch_id, actions, etc."""
+    """Pull decisions from oracle emotion-core Trade API.
+    
+    Returns dict with batch_id, for_date, actions[].
+    Empty actions list means no decisions for the date.
+    """
     for_date = for_date or date.today().isoformat()
     url = f"{_api_url()}/decisions"
     resp = requests.get(url, params={"date": for_date}, timeout=10, verify=_ssl_verify())
@@ -72,7 +80,10 @@ def http_pull_decisions(for_date: str | None = None) -> dict:
 
 
 def http_push_results(data: dict) -> dict:
-    """Push results to oracle HTTP API."""
+    """Push results to oracle emotion-core Trade API.
+    
+    Returns dict with status, batch_id, and optionally note (idempotent).
+    """
     url = f"{_api_url()}/results"
     resp = requests.post(url, json=data, timeout=10, verify=_ssl_verify())
     resp.raise_for_status()
