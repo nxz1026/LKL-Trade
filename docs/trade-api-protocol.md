@@ -231,8 +231,20 @@ nginx 使用自签证书（`CN=140.83.62.161`，SAN 含该 IP，有效期至 203
 
 ### 流量现状
 
-截至 2026-10-01，nginx access log 中 `/trade/` 的历史请求数为 **0**，
-`~/trade/` 下文件均产生于 2026-09-30 一天。该链路**尚未投入日常使用**。
+> **查日志的正确位置**：站点配置了 `access_log /var/log/nginx/dsh-timing.log dsh_timing;`
+> （`dsh-web` 第 31 行），**覆盖** `nginx.conf` 的默认 `access.log`。
+> 本端点的访问记录在 `dsh-timing.log` 及其轮转文件中，**不在 `access.log`**。
+
+实测结果：
+
+- 更早的轮转日志（`dsh-timing.log.2.gz` 及以前）：`/trade/` 命中数 **0** —— 端点为 2026-09-30 新建
+- `dsh-timing.log.1`：2026-09-30 一整天的联调流量，来源 `183.222.0.206`，
+  UA 覆盖 `python-requests` / `curl` / `PowerShell`。内容包括 health 轮询、
+  decisions/results 往返、非法 `date` 与路径穿越类输入的验证。
+  其中注入类输入（`DROP TABLE strategy_signal`、`' OR '1'='1`、`../../../etc/passwd`）
+  **均被正确拒绝（400）**，可佐证本端点无 SQL 注入与路径穿越。
+
+除该次联调外无持续流量 —— 该链路**尚未投入日常使用**。
 
 ## ⚠️ 多用户限制：HTTP 模式无用户维度
 
