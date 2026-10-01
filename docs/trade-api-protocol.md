@@ -23,6 +23,13 @@ GM_SSL_VERIFY=false
 
 设置后 `process_once()` 自动走 HTTP 模式；未设置时回退 SFTP 模式。
 
+> ⚠️ **启用前必读**
+>
+> 1. **HTTP 模式不区分用户** — 服务端为单一 `state.json` 与全局 `processed`。
+>    多账户并发时 N 个客户端会拿到同一 `batch_id`，各下真单但仅第 1 笔被记录，
+>    其余 N-1 笔**永久丢失且无任何报错**。单账户无此问题。详见「多用户限制」。
+> 2. **端点当前对公网无鉴权可达** — 详见「安全现状」。
+
 ## 端点
 
 ### GET /decisions?date=YYYY-MM-DD
@@ -53,9 +60,13 @@ GM_SSL_VERIFY=false
 
 **空决策：** 当日无 BUY 信号时返回 200 + 空 `actions` 数组。
 
+**响应 400：** `date` 非 ISO 格式 → `{"error": "invalid date: ..."}`
+
+- `exec` 是**执行分发依据**（`OPEN_POS`↔`BUY`、`CLOSE_ALL`↔`SELL`），缺失时客户端按 `action` 兜底
 - `batch_id` 是全局唯一标识（UUID），客户端用于幂等追踪
 - 同日期多次拉取返回相同 `batch_id`（决策未刷新时）
 - 决策刷新后生成新 `batch_id`
+- `volume` 目前由策略侧**固定下发 100 股**（`trade_api.py` 中硬编码），不随股价变化
 
 ### POST /results
 
@@ -114,7 +125,12 @@ GM_SSL_VERIFY=false
 }
 ```
 
-**响应 404：** 当日无结果
+**响应 200（当日无结果）：**
+```json
+{"for_date": "2026-09-30", "trades": []}
+```
+
+> 实测为 `200` + 空 `trades`，**不是 404**。客户端不应依赖 404 分支。
 
 ### GET /health
 
@@ -150,11 +166,13 @@ GM_SSL_VERIFY=false
 
 | HTTP 状态码 | 含义 | 客户端行为 |
 |---|---|---|
-| 200 | 成功 | 正常处理 |
-| 400 | JSON 格式错误 | 告警，不重试 |
-| 404 | 无结果 | 跳过 |
+| 200 | 成功 | 正常处理；`actions` / `trades` 为空数组即"无数据" |
+| 400 | 请求格式错误（`invalid date` / `invalid JSON` / `empty body` / `missing batch_id or for_date`） | 告警，不重试 |
 | 500 | 服务端错误 | 告警，下次轮询重试 |
 | 网络不可达 | 连接失败 | 告警，回退等待 |
+
+> **实测不会返回 404。** "无结果"同样是 `200` + 空 `trades`。客户端不应依赖 404 分支。
+> 另：POST 空 body 也会得到 400（`empty body`），不只是 JSON 解析失败。
 
 ## nginx 配置（Oracle 端）
 
@@ -173,9 +191,95 @@ location /trade/ {
 客户端访问 `https://140.83.62.161/trade/decisions?date=...`
 等价于 `http://127.0.0.1:8098/api/trade/decisions?date=...`。
 
-## 安全
+## 安全现状（2026-10-01 实机核对）
 
-- HTTPS 加密传输（nginx SSL 终端）
-- 自签证书场景客户端设置 `GM_SSL_VERIFY=false`
-- 服务端绑定 127.0.0.1，仅 nginx 反代暴露
-- `client_max_body_size 64k` 限制请求体大小
+以下为**已知并接受的当前状态**，记录于此以免后续误判。核对方式：从公网无凭据直连实测。
+
+### 边界在哪
+
+| 层 | 实际状态 |
+|---|---|
+| nginx | `/trade/` **未配置 `auth_basic`**（同文件的 `/emotion/`、`/dashboard/`、`/resume/`、`/admin/` 均已配置）；`client_max_body_size 64k` 限制了请求体大小 |
+| 应用层 | `trade_api.py` 无任何鉴权、限流、CSRF 校验 |
+| 客户端 | `remote_http.py` 两个调用均不带任何 header |
+| 服务端口 | dashboard 绑定 `0.0.0.0:8098` |
+| 云安全组 | 8098 对公网**不可达**（已实测），但 443 可达 |
+| iptables | `INPUT policy ACCEPT` 且含一条 `ACCEPT all` 兜底规则，其后的 SSH/REJECT 为**死规则**，实际不提供任何防护 |
+
+**净结论：系统内不存在任何针对本端点的访问控制。**
+唯一实际起作用的边界是 **OCI 云安全组**——它挡住了 8098 的公网直连，但 443 是放开的，
+而 nginx 的 `/trade/` 恰好把交易 API 重新暴露在 443 上。
+已实测：无凭据从公网 `GET /trade/health` 返回 200。
+
+### 早期表述中的假设已不成立
+
+本节早期版本写有：
+
+> 服务端绑定 127.0.0.1，仅 nginx 反代暴露
+> 无认证头（内网/VPN 场景）
+
+两条都与实机不符：服务端口实绑 `0.0.0.0`（`ss` 实测）；
+`140.83.62.161` 是**公网 IP 且无 VPN**。
+"不做鉴权"在原假设（内网/VPN）下是合理取舍，问题是部署时该假设未成立。
+
+### TLS
+
+nginx 使用自签证书（`CN=140.83.62.161`，SAN 含该 IP，有效期至 2036-09-11）。
+客户端默认 `GM_SSL_VERIFY=false` —— **不校验证书**。这意味着链路可被中间人读写：
+决策指令可被篡改，且未来的任何凭据若走此链路同样可被窃取。
+若后续引入鉴权令牌，**必须同时修复证书校验**，否则令牌等同于明文。
+
+### 流量现状
+
+截至 2026-10-01，nginx access log 中 `/trade/` 的历史请求数为 **0**，
+`~/trade/` 下文件均产生于 2026-09-30 一天。该链路**尚未投入日常使用**。
+
+## ⚠️ 多用户限制：HTTP 模式无用户维度
+
+**这是 HTTP 模式当前最实质的功能缺陷，优先级高于鉴权问题。**
+
+SFTP 模式通过 `GM_REMOTE_DIR=userN` 为每个用户提供独立目录。HTTP 模式（v2.1 引入）
+**没有继承该维度**：
+
+| | SFTP 模式 | HTTP 模式 |
+|---|---|---|
+| 决策隔离 | 每人 `userN/` 独立目录 | **无**——`GM_REMOTE_URL` 单端点，无 user 参数 |
+| 服务端状态 | 各自目录 | **单一** `state.json`、单一 `decisions[for_date]` 缓存、单一全局 `processed` |
+| 批次 ID | 天然隔离 | **所有人拿到同一个 `batch_id`** |
+
+### 多个账户同时使用时的后果
+
+1. N 个客户端 GET 同一日期 → 命中同一缓存 → **N 个客户端拿到同一个 `batch_id`**
+2. 各自本地的 `processed_batches.json` 相互独立 → **N 个账户都认为该批次未处理，各下 N 笔真单**
+3. N 个客户端 POST 回同一 `batch_id` → 服务端幂等检查使第 2~N 次直接返回
+   `note: idempotent` 且**不写结果文件**
+4. 客户端收到 `{"status": "ok"}`，**视为成功**
+
+**净效果：N 个账户真实成交，策略端只记录到 1 笔，其余 N-1 笔的成交、持仓与结果永久丢失。**
+该过程**无任何报错或告警**。
+
+> 单账户使用时不存在此问题（服务端 `processed` 与本地账本一一对应）。
+> **引入多账户前必须先解决。**
+
+## 改进方向（尚未实施）
+
+按优先级记录，暂未排期：
+
+1. **多用户隔离**（优先）— 服务端按 `user` 切分命名空间（`~/trade/userN/`），
+   `decisions` 缓存键改为 `(user, for_date)`，`batch_id` 按 `(user, for_date)` 生成，
+   `processed` 与 results 按用户落盘。
+   *决策内容可共享（同一策略同一信号），必须隔离的是执行态* —— 同一信号在两个账户上是
+   两笔不同成交，共用 `batch_id` 会让后者被幂等检查吃掉。
+2. **应用层鉴权** — 客户端新增 `GM_TRADE_TOKEN` / `GM_TRADE_USER`，经
+   `X-Trade-Token` / `X-Trade-User` 头下发；服务端按用户校验并记录审计日志。
+   校验方式可复用本仓 `dashboard/trade_server.py` 已有的 `secrets.token_hex(16)` +
+   `secrets.compare_digest` 范式。
+3. **证书校验** — 将 nginx 自签证书随安装包分发，`GM_SSL_VERIFY` 指向该文件。
+   必须先于第 2 项落地，否则令牌可被窃取。
+4. **nginx 层** — 为 `/trade/` 增加 `auth_basic`（使用**独立** htpasswd，
+   不复用 dashboard 凭据，避免看板用户自动获得交易写权限）与 `limit_req`。
+   出口 IP 动态，**不建议**用 IP 白名单。
+
+> 上线顺序须**先客户端、后服务端**：客户端改动保持向后兼容（配置了令牌才发送），
+> 全部升级完成后再开启服务端强制校验，否则会造成多个客户端同时断线。
+> 本仓已有自动更新通道（`updater.py` + `version.json` + GitHub Releases）可用于分发。
