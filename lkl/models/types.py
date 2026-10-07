@@ -15,3 +15,6 @@ class Signal:
     buy_window: str = ""               # 分析端市场买入口径标签（window），仅展示，不参与执行
     exec_: str = ""                    # exec 执行语义：OPEN_POS / CLOSE_ALL（契约字段 exec）
     volume: int = 0                    # OPEN_POS=建议股数(可自定) / CLOSE_ALL=当前持仓数(忽略)
+    source: str = ""                   # 决策来源（GM_SOURCE）。**空 = 不参与 ref**（向后兼容旧账本）；
+                                       # 非空时 ref 变 `来源|日期|代码|动作`，用于多上游并存时
+                                       # 互不遮挡。SFTP 模式恒为空。

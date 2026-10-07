@@ -106,6 +106,23 @@ def remote_url() -> str:
     return _secret("GM_REMOTE_URL")
 
 
+def source() -> str:
+    """**决策来源标识**（GM_SOURCE）。空 = 不启用来源维度。
+
+    为什么需要它（2026-10-07）：接第二个上游（CPT）时，`ref`（防重/幂等的唯一键）
+    原本是 `日期|代码|动作`、**没有来源维度**，于是两个上游对同一只票发出的同向指令
+    会被 `ledger` / `resolve` 当成**同一笔单**——先到的那笔成交后，另一笔被防重挡住。
+    结果不是「重复下单」，而是**静默丢单**。
+
+    显式设置后，`ref` 变成 `来源|日期|代码|动作`，两个上游各下各的，互不遮挡。
+
+    ⚠️ 默认空 = 保持旧 ref 格式不变。**不要给已在跑的上游随手加 GM_SOURCE**，
+    那会让它与历史 `executed.json` 里的 ref 对不上，防重账本失效、一天内重发同一笔。
+    新增来源时才设，且要与对端上游的标识一致。
+    """
+    return _env("GM_SOURCE").strip()
+
+
 def holidays() -> tuple:
     """休市日集合（YYYY-MM-DD 逗号分隔，中英文逗号均可），来自 GM_HOLIDAYS 或 .secrets/gm.env。"""
     raw = _secret("GM_HOLIDAYS").replace("，", ",")
@@ -236,6 +253,11 @@ GM_UPDATE_AUTO=0
 # GM_REMOTE_DIR=你的用户子目录（如 user1）；绝对路径 / 含 .. 会拒绝；不填为纯本地
 # 远端交换模式：SFTP（默认）或 HTTP Trade API
 # GM_REMOTE_URL=https://140.83.62.161/trade  ← HTTP 模式（优先于 SFTP）
+# ---------- 决策来源维度（接第二个上游时必填） ----------
+# GM_SOURCE=  ← **留空 = 不启用来源维度**（ref 维持 `日期|代码|动作`，向后兼容）。
+#   只有当同一个交易机要同时消费**多个上游**的决策时才设；每上游一个值（如 emotion / cpt），
+#   启用后 ref 变 `来源|日期|代码|动作`，两个上游对同一只票的同向指令不再互相防重。
+#   ⚠️ 不要给已在跑的上游随手加——那会与历史 executed.json 里的 ref 对不上，防重失效。
 GM_REMOTE_HOST=
 GM_REMOTE_KEY=~/.ssh/DJ.pem
 GM_REMOTE_DIR=user1

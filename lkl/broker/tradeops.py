@@ -25,7 +25,18 @@ MAX_ATTEMPTS = 3  # 每 ref 每日自动尝试上限
 
 
 def _ref(sig: Signal) -> str:
-    return f"{sig.confirm_date}|{sig.code}|{sig.action}"
+    """防重/幂等的唯一键。
+
+    ⚠️ 2026-10-07 加来源维度：`sig.source` 非空时前缀进去，ref 变
+    `来源|日期|代码|动作`。接第二个上游（CPT）时，两个上游对同一只票发出的
+    同向指令原本会被 `ledger` / `resolve` 当成**同一笔**——先成交的那笔让另一笔
+    被防重挡住，即**静默丢单**。
+
+    **空 source 时格式与旧版逐字一致**（`日期|代码|动作`），所以历史
+    `executed.json` / `pending.json` 里的 ref 继续有效——这是不能破坏的连续性。
+    """
+    base = f"{sig.confirm_date}|{sig.code}|{sig.action}"
+    return f"{sig.source}|{base}" if sig.source else base
 
 
 def _executor():
@@ -180,7 +191,20 @@ def process_once(for_date: str | None = None, executor=None) -> int:
 
 
 def _process_once_http(for_date: str, executor) -> int:
-    """HTTP mode: pull decisions from oracle Trade API, process, push results."""
+    """HTTP mode: pull decisions from oracle Trade API, process, push results.
+
+    ⚠️ 2026-10-07 加固三处（均为「接第二个上游 CPT」的前置条件）：
+      1. **来源维度** `GM_SOURCE` 贯穿 ref / batch_id —— 两个上游对同一只票的
+         同向指令不再互相防重（原实现会**静默丢单**）。
+      2. **for_date 一致性** —— 原实现拿请求参数直接当 `confirm_date`，
+         **从不校验上游回传的日期**，上游串日期时昨天的决策会被当今天执行。
+      3. **契约校验复用** —— 原实现直接 `a["code"]` / `a["action"]` 取值，
+         **完全绕过 `exchange._validate`**（6 位码 / action 枚举 / exec 配对 /
+         volume 非负），新上游的脏数据没有第二道防线。
+
+    校验一律放在拿 `single_executor()` 锁**之前**：坏批次不该碰到任何状态。
+    """
+    source = config.source()
     try:
         data = remote_http.http_pull_decisions(for_date)
     except Exception as e:
@@ -193,9 +217,38 @@ def _process_once_http(for_date: str, executor) -> int:
     if not actions:
         return 0
 
-    # Idempotency: skip if this batch was already processed
-    if remote_http.is_processed(batch_id):
-        log.info("batch %s already processed, skipping", batch_id)
+    # ① 上游回传的 for_date 必须与请求的一致，否则整批拒绝（防串日误执行）
+    got_date = str(data.get("for_date") or "")[:10]
+    if got_date and got_date != for_date:
+        log.error("上游 for_date=%s 与请求 %s 不一致，整批拒绝", got_date, for_date)
+        alerts.emit("ERROR", f"决策日期不一致：上游 {got_date} vs 请求 {for_date}，整批拒绝")
+        return 0
+
+    # ② 复用 SFTP 模式的契约校验；任一动作不合法 → 整批中止，绝不按推测下单
+    from datetime import date as date_type
+    try:
+        target_date = date_type.fromisoformat(for_date)
+        signals = []
+        for i, a in enumerate(actions):
+            code, action, ex, volume = exchange._validate(a, i)
+            signals.append(Signal(
+                confirm_date=target_date,
+                code=code,
+                action=action,
+                reason=a.get("reason", ""),
+                buy_window=a.get("window", ""),
+                exec_=ex,
+                volume=volume,
+                source=source,
+            ))
+    except exchange.DecisionValidationError as e:
+        log.error("决策契约校验失败，整批拒绝（来源=%s）: %s", source or "-", e)
+        alerts.emit("ERROR", f"决策契约非法（来源 {source or '-'}），整批拒绝：{e}")
+        return 0
+
+    # ③ 幂等按来源分桶：两个上游的 batch_id 空间独立
+    if remote_http.is_processed(batch_id, source):
+        log.info("batch %s（来源 %s）已处理，跳过", batch_id, source or "-")
         return 0
 
     with single_executor():
@@ -221,21 +274,6 @@ def _process_once_http(for_date: str, executor) -> int:
         done = ledger.load()
         new_confirmed: list[str] = []
         verdicts = resolve.load()
-
-        # Convert HTTP actions to Signal objects
-        from datetime import date as date_type
-        target_date = date_type.fromisoformat(for_date)
-        signals = []
-        for a in actions:
-            signals.append(Signal(
-                confirm_date=target_date,
-                code=a["code"],
-                action=a["action"],
-                reason=a.get("reason", ""),
-                buy_window=a.get("window", ""),
-                exec_=a.get("exec", "OPEN_POS"),
-                volume=a.get("volume", 100),
-            ))
 
         file_settled = True
         for sig in signals:
@@ -312,9 +350,10 @@ def _process_once_http(for_date: str, executor) -> int:
             remote_http.http_push_results({
                 "batch_id": batch_id,
                 "for_date": for_date,
+                "source": source,
                 "trades": attempts,
             })
-            remote_http.mark_processed(batch_id)
+            remote_http.mark_processed(batch_id, source)
         except Exception as e:
             log.warning("HTTP push results failed: %s", e)
 

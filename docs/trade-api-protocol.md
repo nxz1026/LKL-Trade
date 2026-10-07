@@ -28,7 +28,16 @@ GM_SSL_VERIFY=false
 > 1. **HTTP 模式不区分用户** — 服务端为单一 `state.json` 与全局 `processed`。
 >    多账户并发时 N 个客户端会拿到同一 `batch_id`，各下真单但仅第 1 笔被记录，
 >    其余 N-1 笔**永久丢失且无任何报错**。单账户无此问题。详见「多用户限制」。
+>
+>    **客户端侧已加缓解**（2026-10-07）：`GM_SOURCE` 把 `ref` 与批次键按来源分桶，
+>    两个上游对同一只票的同向指令不再互相防重。**但服务端仍是单命名空间**，
+>    上游侧的状态隔离（`TRADE_DIR`）仍需各自保证——多个上游必须用**各自独立的
+>    决策源目录**，否则 `decisions[for_date]` 缓存仍会互相覆盖。
 > 2. **端点当前对公网无鉴权可达** — 详见「安全现状」。
+> 3. **HTTP 模式的服务端契约校验在客户端** — 客户端已复用与 SFTP 模式同一套
+>    `exchange._validate`（6 位码 / action 枚举 / exec 配对 / volume 非负），
+>    并新增 `for_date` 一致性校验；任一不合法**整批拒绝**。但服务端本身不校验，
+>    非本客户端的调用方没有这层保护。
 
 ## 端点
 
@@ -145,9 +154,19 @@ GM_SSL_VERIFY=false
 
 ### 客户端
 
-- `processed_batches.json` 记录已处理的 `batch_id` 集合
-- `process_once()` 执行前检查 `is_processed(batch_id)`，已处理则跳过
-- 执行成功后标记 `mark_processed(batch_id)`
+- `processed_batches.json` 记录已处理的批次键。**键 = `来源:batch_id`**（`GM_SOURCE`
+  非空时），空来源时就是裸 `batch_id`。
+- `process_once()` 执行前检查 `is_processed(batch_id, source)`，已处理则跳过
+- 执行成功后标记 `mark_processed(batch_id, source)`
+
+**为什么键里要带来源（2026-10-07）**：同一个交易机接多个上游（emotion-core / CPT）时，
+两个上游各自生成 UUID4，撞车概率极低——但一旦某个上游**复用了** `batch_id`
+（重放、重试、从旧备份恢复），第二份决策会被误判为已处理而**静默跳过**。
+分桶之后不依赖「UUID 不会撞」这种运气。
+
+> ⚠️ **`GM_SOURCE` 默认空 = 保持 `ref` 与 `processed` 的旧格式不变**。
+> 不要给**已在跑**的上游随手加：那会让它与历史 `executed.json` 里的
+> `日期|代码|动作` 对不上，防重账本失效、一天内重发同一笔。新增来源时才设。
 
 ### 服务端
 

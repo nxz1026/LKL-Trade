@@ -27,6 +27,15 @@ BATCHES_FILE = Path("processed_batches.json")
 
 
 # ── batch tracking ───────────────────────────────────────────
+# ⚠️ 2026-10-07：key 加**来源维度**。原实现只用 batch_id 作键，而 batch_id 是
+# 上游生成的 UUID4 —— 两个上游各自为政时空间独立，撞车概率极低；但一旦同一
+# 个交易机接了 emotion-core 与 CPT 两个上游，且某个上游**复用了** batch_id
+# （重放、重试、从旧备份恢复），第二份决策会被静默跳过。这里显式分桶，
+# 不依赖「UUID 不会撞」这种运气。
+def _key(batch_id: str, source: str = "") -> str:
+    return f"{source}:{batch_id}" if source else batch_id
+
+
 def _load_batches() -> dict:
     p = fileio.directory() / BATCHES_FILE
     if p.exists():
@@ -42,18 +51,19 @@ def _save_batches(data: dict):
     fileio.atomic_write(p, json.dumps(data, ensure_ascii=False, indent=2))
 
 
-def is_processed(batch_id: str) -> bool:
+def is_processed(batch_id: str, source: str = "") -> bool:
     if not batch_id:
         return False
-    return batch_id in _load_batches().get("batches", [])
+    return _key(batch_id, source) in _load_batches().get("batches", [])
 
 
-def mark_processed(batch_id: str):
+def mark_processed(batch_id: str, source: str = ""):
     if not batch_id:
         return
+    key = _key(batch_id, source)
     data = _load_batches()
-    if batch_id not in data["batches"]:
-        data["batches"].append(batch_id)
+    if key not in data["batches"]:
+        data["batches"].append(key)
         _save_batches(data)
 
 
